@@ -13,6 +13,7 @@ use craft\records\Category;
 use craft\records\UserGroup;
 use DateTime;
 use yii\db\ActiveQueryInterface;
+use yii2tech\ar\position\PositionBehavior;
 
 /**
  * Discount record.
@@ -45,6 +46,7 @@ use yii\db\ActiveQueryInterface;
  * @property bool $stopProcessing
  * @property int $totalUseLimit
  * @property int $totalUses
+ * @mixin PositionBehavior
  * @author Pixel & Tonic, Inc. <support@pixelandtonic.com>
  * @since 2.0
  */
@@ -65,6 +67,21 @@ class Discount extends ActiveRecord
     public static function tableName(): string
     {
         return Table::DISCOUNTS;
+    }
+
+    /**
+     * @return array
+     */
+    public function behaviors(): array
+    {
+        $behaviors = parent::behaviors();
+
+        $behaviors['position'] = [
+            'class' => PositionBehavior::class,
+            'positionAttribute' => 'sortOrder',
+        ];
+
+        return $behaviors;
     }
 
     /**
