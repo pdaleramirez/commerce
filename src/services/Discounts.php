@@ -711,7 +711,12 @@ class Discounts extends Component
         }
     }
 
-    public function getAdminTableData($offset = 0, $limit = 20)
+    /**
+     * @param int $offset
+     * @param int $limit
+     * @return array
+     */
+    public function getAdminTableData($offset = 0, $limit = 20): array
     {
         $discounts = $this->_createDiscountQuery()
             ->offset($offset)
