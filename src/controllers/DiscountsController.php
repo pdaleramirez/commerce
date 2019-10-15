@@ -10,15 +10,23 @@ namespace craft\commerce\controllers;
 use Craft;
 use craft\commerce\base\Purchasable;
 use craft\commerce\base\PurchasableInterface;
+use craft\commerce\db\Table;
 use craft\commerce\elements\Product;
 use craft\commerce\models\Discount;
 use craft\commerce\Plugin;
+use craft\commerce\records\Discount as DiscountRecord;
+use craft\db\Query;
 use craft\elements\Category;
+use craft\errors\MissingComponentException;
 use craft\helpers\ArrayHelper;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\Json;
 use craft\helpers\Localization;
 use craft\i18n\Locale;
+use craft\web\assets\admintable\AdminTableAsset;
+use yii\db\Exception;
+use yii\db\Expression;
+use yii\web\BadRequestHttpException;
 use yii\web\HttpException;
 use yii\web\Response;
 use function explode;
@@ -50,6 +58,7 @@ class DiscountsController extends BaseCpController
     public function actionIndex(): Response
     {
         $discounts = Plugin::getInstance()->getDiscounts()->getAllDiscounts();
+        $this->getView()->registerAssetBundle(AdminTableAsset::class);
         return $this->renderTemplate('commerce/promotions/discounts/index', compact('discounts'));
     }
 
@@ -222,6 +231,151 @@ class DiscountsController extends BaseCpController
         Plugin::getInstance()->getDiscounts()->clearCouponUsageHistoryById($id);
 
         return $this->asJson(['success' => true]);
+    }
+
+    /**
+     * @return Response|null
+     * @throws BadRequestHttpException
+     */
+    public function actionUpdateSortOrder()
+    {
+        $this->requirePostRequest();
+        $request = Craft::$app->getRequest();
+        $id = $request->getParam('id', null);
+        $position = $request->getParam('position', null);
+
+        $ids = $request->getParam('ids', []);
+        $move = $request->getParam('move', null);
+
+        if (!empty($ids) && $move) {
+            $discounts = DiscountRecord::find()->where(['id' => $ids])->all();
+            /** @var DiscountRecord $discount */
+            foreach ($discounts as $discount) {
+                switch ($move) {
+                    case 'up':
+                        $discount->movePrev();
+                        break;
+                    case 'down':
+                        $discount->moveNext();
+                        break;
+                    case 'top':
+                        $discount->moveFirst();
+                        break;
+                    case 'bottom':
+                        $discount->moveLast();
+                        break;
+                }
+
+                $discount->save();
+            }
+
+            if ($request->getAcceptsJson()) {
+                return $this->asJson(['success' => true]);
+            }
+
+            Craft::$app->getSession()->setNotice(Craft::t('commerce', 'Discount order saved.'));
+            return null;
+        } elseif ($id && $position !== null) {
+            /** @var DiscountRecord $discount */
+            $discount = DiscountRecord::find()->where(['id' => $id])->one();
+            if (!$discount) {
+                $errorMsg = Craft::t('commerce', 'Discount does not exist.');
+                if ($request->getAcceptsJson()) {
+                    return $this->asErrorJson($errorMsg);
+                }
+
+                Craft::$app->getSession()->setError($errorMsg);
+                return null;
+            }
+
+            $discount->moveToPosition($position);
+            $discount->save();
+
+            if ($request->getAcceptsJson()) {
+                return $this->asJson(['success' => true]);
+            }
+
+            Craft::$app->getSession()->setNotice(Craft::t('commerce', 'Discount order saved.'));
+            return null;
+        }
+
+        $error = Craft::t('commerce', 'Unable to update discount order.');
+        if ($request->getAcceptsJson()) {
+            return $this->asErrorJson($error);
+        }
+
+        Craft::$app->getSession()->setError($error);
+        return null;
+    }
+
+    /**
+     * @throws MissingComponentException
+     * @throws Exception
+     * @throws BadRequestHttpException
+     */
+    public function actionUpdateStatuses()
+    {
+        $this->requirePostRequest();
+        $request = Craft::$app->getRequest();
+        $ids = $request->getParam('ids', []);
+        $status = $request->getParam('status', null);
+
+        if (empty($ids)) {
+            Craft::$app->getSession()->setError(Craft::t('commerce', 'A list of IDs is required.'));
+            return;
+        }
+
+        if ($status === null) {
+            Craft::$app->getSession()->setError(Craft::t('commerce', 'A status is required.'));
+            return;
+        }
+
+        $status = ($status == 'enabled') ? 1 : 0;
+
+        Craft::$app->getDb()->createCommand()
+            ->update(Table::DISCOUNTS, [
+                'enabled' => $status,
+            ], [
+                'id' => $ids
+            ])
+            ->execute();
+
+        Craft::$app->getSession()->setNotice(Craft::t('commerce', 'Discounts updated.'));
+    }
+
+    public function actionGetAdminTable() {
+        $this->requireAcceptsJson();
+        $request = Craft::$app->getRequest();
+        $page = $request->getParam('page', 1);
+        $limit = $request->getParam('per_page', 4);
+        $offset = ($page - 1) * $limit;
+
+
+        $discounts = Plugin::getInstance()->getDiscounts()->getAdminTableData($offset, $limit);
+        $total = count(Plugin::getInstance()->getDiscounts()->getAllDiscounts());
+        $lastPage = ceil($total / $limit);
+        $nextPageUrl = '?next';
+        $prevPageUrl = '?prev';
+        $from = ($page * $limit) - $limit;
+        $to = $from + $limit;
+        $to = $to > $total ? $total : $to;
+        $from++;
+
+        return $this->asJson([
+            'links' => [
+                'pagination' => [
+                    'total' => (int)$total,
+                    'per_page' => (int)$limit,
+                    'current_page' => (int)$page,
+                    'last_page' => (int)$lastPage,
+                    'next_page_url' => $nextPageUrl,
+                    'prev_page_url' => $prevPageUrl,
+                    'from' => (int)$from,
+                    'to' => (int)$to,
+                ]
+            ],
+            'data' => $discounts
+        ]);
     }
 
     // Private Methods
