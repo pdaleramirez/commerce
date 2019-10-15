@@ -510,7 +510,9 @@ class Discounts extends Component
         $record->perEmailLimit = $model->perEmailLimit;
         $record->totalUseLimit = $model->totalUseLimit;
 
-        $record->sortOrder = $record->sortOrder ?: 999;
+        if (isset($model->sortOrder)) {
+            $record->sortOrder = $model->sortOrder;
+        }
         $record->code = $model->code ?: null;
 
         $record->allGroups = $model->allGroups = empty($model->getUserGroupIds());
