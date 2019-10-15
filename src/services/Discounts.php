@@ -24,6 +24,7 @@ use craft\commerce\records\DiscountUserGroup as DiscountUserGroupRecord;
 use craft\commerce\records\EmailDiscountUse as EmailDiscountUseRecord;
 use craft\db\Query;
 use craft\elements\Category;
+use craft\helpers\UrlHelper;
 use DateTime;
 use yii\base\Component;
 use yii\base\Exception;
@@ -708,6 +709,33 @@ class Discounts extends Component
                     ->execute();
             }
         }
+    }
+
+    public function getAdminTableData($offset = 0, $limit = 20)
+    {
+        $discounts = $this->_createDiscountQuery()
+            ->offset($offset)
+            ->limit($limit)
+            ->all();
+
+        $data = [];
+        foreach ($discounts as $discount) {
+            $status = $discount['enabled'] ? 'enabled' : 'disabled';
+            $url = UrlHelper::cpUrl('commerce/promotions/discounts/' . $discount['id']);
+            $name = sprintf('<span class="status %s"></span><a href="%s">%s</a>', $status, $url, $discount['name']);
+            $stopProcessing = $discount['stopProcessing'] ? sprintf('<span data-icon="check" title="%s"></span>', Craft::t('commerce', 'Yes')) : '' ;
+
+            $data[] = [
+                'id' => (int)$discount['id'],
+                'name' => $name,
+                'code' => $discount['code'],
+                'duration' => ($discount['dateFrom'] ? $discount['dateFrom']->format('short') : '∞') . ' - ' .($discount['dateTo'] ? $discount['dateTo']->format('short') : '∞'),
+                'totalUses' => $discount['totalUses'],
+                'stopProcessing' => $stopProcessing
+            ];
+        }
+
+        return $data;
     }
 
     // Private Methods
