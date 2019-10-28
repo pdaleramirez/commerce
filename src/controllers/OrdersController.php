@@ -52,13 +52,14 @@ class OrdersController extends BaseCpController
 
     /**
      * Index of orders
+     *
+     * @param string $orderStatusHandle
+     * @return Response
+     * @throws Throwable
      */
-    public function actionOrderIndex(): Response
+    public function actionOrderIndex(string $orderStatusHandle = ''): Response
     {
-        // Remove all incomplete carts older than a certain date in config.
-        Plugin::getInstance()->getCarts()->purgeIncompleteCarts();
-
-        return $this->renderTemplate('commerce/orders/_index');
+        return $this->renderTemplate('commerce/orders/_index', compact('orderStatusHandle'));
     }
 
     /**

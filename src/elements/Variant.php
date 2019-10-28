@@ -965,6 +965,22 @@ class Variant extends Purchasable
         return true;
     }
 
+    /**
+     * @param string $attribute
+     * @return string
+     * @throws InvalidConfigException
+     * @since 2.2
+     */
+    public function getSearchKeywords(string $attribute): string
+    {
+        if ($attribute == 'productTitle') {
+            return $this->getProduct()->title;
+        }
+
+        return parent::getSearchKeywords($attribute);
+    }
+
+
     // Protected Methods
     // =========================================================================
 
@@ -1015,7 +1031,7 @@ class Variant extends Purchasable
      */
     protected static function defineSearchableAttributes(): array
     {
-        return ['sku', 'price', 'width', 'height', 'length', 'weight', 'stock', 'hasUnlimitedStock', 'minQty', 'maxQty'];
+        return ['sku', 'price', 'width', 'height', 'length', 'weight', 'stock', 'hasUnlimitedStock', 'minQty', 'maxQty', 'productTitle'];
     }
 
     /**

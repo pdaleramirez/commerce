@@ -107,16 +107,25 @@ class Install extends Migration
             'title' => $this->string(),
             'firstName' => $this->string(),
             'lastName' => $this->string(),
+            'fullName' => $this->string(),
             'address1' => $this->string(),
             'address2' => $this->string(),
+            'address3' => $this->string(),
             'city' => $this->string(),
             'zipCode' => $this->string(),
             'phone' => $this->string(),
             'alternativePhone' => $this->string(),
+            'label' => $this->string(),
+            'notes' => $this->text(),
             'businessName' => $this->string(),
             'businessTaxId' => $this->string(),
             'businessId' => $this->string(),
             'stateName' => $this->string(),
+            'custom1' => $this->string(),
+            'custom2' => $this->string(),
+            'custom3' => $this->string(),
+            'custom4' => $this->string(),
+            'isEstimated' => $this->boolean()->notNull()->defaultValue(false),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
             'uid' => $this->uid(),
@@ -127,6 +136,7 @@ class Install extends Migration
             'name' => $this->string()->notNull(),
             'iso' => $this->string(2)->notNull(),
             'isStateRequired' => $this->boolean(),
+            'sortOrder' => $this->integer(),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
             'uid' => $this->uid(),
@@ -225,6 +235,7 @@ class Install extends Migration
             'allCategories' => $this->boolean(),
             'enabled' => $this->boolean(),
             'stopProcessing' => $this->boolean(),
+            'ignoreSales' => $this->boolean()->notNull()->defaultValue(false),
             'sortOrder' => $this->integer(),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
@@ -247,6 +258,8 @@ class Install extends Migration
             'recipientType' => $this->enum('recipientType', ['customer', 'custom'])->defaultValue('custom'),
             'to' => $this->string(),
             'bcc' => $this->string(),
+            'cc' => $this->string(),
+            'replyTo' => $this->string(),
             'enabled' => $this->boolean(),
             'attachPdf' => $this->boolean(),
             'templatePath' => $this->string()->notNull(),
@@ -307,6 +320,7 @@ class Install extends Migration
             'description' => $this->string(),
             'amount' => $this->decimal(14, 4)->notNull(),
             'included' => $this->boolean(),
+            'isEstimated' => $this->boolean()->notNull()->defaultValue(false),
             'sourceSnapshot' => $this->longText(),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
@@ -329,6 +343,8 @@ class Install extends Migration
             'id' => $this->integer()->notNull(),
             'billingAddressId' => $this->integer(),
             'shippingAddressId' => $this->integer(),
+            'estimatedBillingAddressId' => $this->integer(),
+            'estimatedShippingAddressId' => $this->integer(),
             'gatewayId' => $this->integer(),
             'paymentSourceId' => $this->integer(),
             'customerId' => $this->integer(),
@@ -374,6 +390,7 @@ class Install extends Migration
             'name' => $this->string()->notNull(),
             'handle' => $this->string()->notNull(),
             'color' => $this->enum('color', ['green', 'orange', 'red', 'blue', 'yellow', 'pink', 'purple', 'turquoise', 'light', 'grey', 'black'])->notNull()->defaultValue('green'),
+            'description' => $this->string(),
             'dateDeleted' => $this->dateTime(),
             'sortOrder' => $this->integer(),
             'default' => $this->boolean(),
@@ -633,6 +650,7 @@ class Install extends Migration
             'name' => $this->string()->notNull(),
             'description' => $this->string(),
             'isCountryBased' => $this->boolean(),
+            'zipCodeConditionFormula' => $this->string(),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
             'uid' => $this->uid(),
@@ -658,6 +676,9 @@ class Install extends Migration
             'subscriptionData' => $this->text(),
             'trialDays' => $this->integer()->notNull(),
             'nextPaymentDate' => $this->dateTime(),
+            'hasStarted' => $this->boolean()->notNull()->defaultValue(true),
+            'isSuspended' => $this->boolean()->notNull()->defaultValue(false),
+            'dateSuspended' => $this->dateTime(),
             'isCanceled' => $this->boolean()->notNull(),
             'dateCanceled' => $this->dateTime(),
             'isExpired' => $this->boolean()->notNull(),
@@ -684,6 +705,7 @@ class Install extends Migration
             'isEverywhere' => $this->boolean(),
             'taxCategoryId' => $this->integer()->null(),
             'name' => $this->string()->notNull(),
+            'code' => $this->string(),
             'rate' => $this->decimal(14, 10)->notNull(),
             'include' => $this->boolean(),
             'isVat' => $this->boolean(),
@@ -717,6 +739,7 @@ class Install extends Migration
             'name' => $this->string()->notNull(),
             'description' => $this->string(),
             'isCountryBased' => $this->boolean(),
+            'zipCodeConditionFormula' => $this->string(),
             'default' => $this->boolean(),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
@@ -879,7 +902,6 @@ class Install extends Migration
         $this->createIndex(null, Table::ORDERS, 'gatewayId', false);
         $this->createIndex(null, Table::ORDERS, 'customerId', false);
         $this->createIndex(null, Table::ORDERS, 'orderStatusId', false);
-        $this->createIndex(null, Table::ORDERSTATUSES, 'isArchived', false);
         $this->createIndex(null, Table::ORDERSTATUS_EMAILS, 'orderStatusId', false);
         $this->createIndex(null, Table::ORDERSTATUS_EMAILS, 'emailId', false);
         $this->createIndex(null, Table::PAYMENTCURRENCIES, 'iso', true);
@@ -987,6 +1009,8 @@ class Install extends Migration
         $this->addForeignKey(null, Table::ORDERS, ['gatewayId'], Table::GATEWAYS, ['id'], 'SET NULL');
         $this->addForeignKey(null, Table::ORDERS, ['paymentSourceId'], Table::PAYMENTSOURCES, ['id'], 'SET NULL');
         $this->addForeignKey(null, Table::ORDERS, ['shippingAddressId'], Table::ADDRESSES, ['id'], 'SET NULL');
+        $this->addForeignKey(null, Table::ORDERS, ['estimatedShippingAddressId'], Table::ADDRESSES, ['id'], 'SET NULL');
+        $this->addForeignKey(null, Table::ORDERS, ['estimatedBillingAddressId'], Table::ADDRESSES, ['id'], 'SET NULL');
         $this->addForeignKey(null, Table::ORDERSTATUS_EMAILS, ['emailId'], Table::EMAILS, ['id'], 'CASCADE', 'CASCADE');
         $this->addForeignKey(null, Table::ORDERSTATUS_EMAILS, ['orderStatusId'], Table::ORDERSTATUSES, ['id'], 'RESTRICT', 'CASCADE');
         $this->addForeignKey(null, Table::PAYMENTSOURCES, ['gatewayId'], Table::GATEWAYS, ['id'], 'CASCADE');

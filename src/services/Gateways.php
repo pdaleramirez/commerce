@@ -15,11 +15,13 @@ use craft\commerce\db\Table;
 use craft\commerce\gateways\Dummy;
 use craft\commerce\gateways\Manual;
 use craft\commerce\gateways\MissingGateway;
+use craft\commerce\Plugin;
 use craft\commerce\records\Gateway as GatewayRecord;
 use craft\db\Query;
 use craft\errors\MissingComponentException;
 use craft\events\ConfigEvent;
 use craft\events\RegisterComponentTypesEvent;
+use craft\helpers\ArrayHelper;
 use craft\helpers\Component as ComponentHelper;
 use craft\helpers\Db;
 use craft\helpers\StringHelper;
@@ -122,6 +124,9 @@ class Gateways extends Component
         foreach ($rows as $row) {
             $gateways[$row['id']] = $this->createGateway($row);
         }
+
+        // Filter gateways to respect custom config files settings `isFrontendEnabled` to `false`
+        $gateways = ArrayHelper::where($gateways, 'isFrontendEnabled', true);
 
         return $gateways;
     }
@@ -238,7 +243,7 @@ class Gateways extends Component
         $existingGateway = $this->getGatewayByHandle($gateway->handle);
 
         if ($existingGateway && (!$gateway->id || $gateway->id != $existingGateway->id)) {
-            $gateway->addError('handle', Craft::t('commerce', 'That handle is already in use.'));
+            $gateway->addError('handle', Plugin::t( 'That handle is already in use.'));
             return false;
         }
 

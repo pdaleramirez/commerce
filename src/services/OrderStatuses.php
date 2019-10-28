@@ -79,6 +79,7 @@ class OrderStatuses extends Component
      *
      * @param bool $withTrashed
      * @return OrderStatus[]
+     * @since 2.2
      */
     public function getAllOrderStatuses($withTrashed = false): array
     {
@@ -193,7 +194,7 @@ class OrderStatuses extends Component
         $existingStatus = $this->getOrderStatusByHandle($orderStatus->handle);
 
         if ($existingStatus && (!$orderStatus->id || $orderStatus->id !== $existingStatus->id)) {
-            $orderStatus->addError('handle', Craft::t('commerce', 'That handle is already in use'));
+            $orderStatus->addError('handle', Plugin::t( 'That handle is already in use'));
             return false;
         }
 
@@ -207,6 +208,7 @@ class OrderStatuses extends Component
                 'name' => $orderStatus->name,
                 'handle' => $orderStatus->handle,
                 'color' => $orderStatus->color,
+                'description' => $orderStatus->description,
                 'sortOrder' => (int)($orderStatus->sortOrder ?? 99),
                 'default' => (bool)$orderStatus->default,
                 'emails' => array_combine($emails, $emails)
@@ -242,6 +244,7 @@ class OrderStatuses extends Component
             $statusRecord->name = $data['name'];
             $statusRecord->handle = $data['handle'];
             $statusRecord->color = $data['color'];
+            $statusRecord->description = $data['description'];
             $statusRecord->sortOrder = $data['sortOrder'] ?? 99;
             $statusRecord->default = $data['default'];
             $statusRecord->uid = $statusUid;
@@ -409,6 +412,7 @@ class OrderStatuses extends Component
                 'name',
                 'handle',
                 'color',
+                'description',
                 'sortOrder',
                 'default',
                 'dateDeleted',

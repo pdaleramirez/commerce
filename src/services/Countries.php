@@ -10,6 +10,7 @@ namespace craft\commerce\services;
 use Craft;
 use craft\commerce\db\Table;
 use craft\commerce\models\Country;
+use craft\commerce\Plugin;
 use craft\commerce\records\Country as CountryRecord;
 use craft\db\Query;
 use craft\helpers\ArrayHelper;
@@ -203,7 +204,7 @@ class Countries extends Component
             $record = CountryRecord::findOne($country->id);
 
             if (!$record) {
-                throw new Exception(Craft::t('commerce', 'No country exists with the ID “{id}”', ['id' => $country->id]));
+                throw new Exception(Plugin::t( 'No country exists with the ID “{id}”', ['id' => $country->id]));
             }
         } else {
             $record = new CountryRecord();
@@ -246,6 +247,23 @@ class Countries extends Component
         return false;
     }
 
+    /**
+     * @param array $ids
+     * @return bool
+     * @throws \yii\db\Exception
+     * @since 2.2
+     */
+    public function reorderCountries(array $ids): bool
+    {
+        $command = Craft::$app->getDb()->createCommand();
+
+        foreach ($ids as $index => $id) {
+            $command->update(Table::COUNTRIES, ['sortOrder' => $index + 1], ['id' => $id])->execute();
+        }
+
+        return true;
+    }
+
     // Private methods
     // =========================================================================
 
@@ -264,6 +282,6 @@ class Countries extends Component
                 'countries.isStateRequired'
             ])
             ->from([Table::COUNTRIES . ' countries'])
-            ->orderBy(['name' => SORT_ASC]);
+            ->orderBy(['sortOrder' => SORT_ASC, 'name' => SORT_ASC]);
     }
 }

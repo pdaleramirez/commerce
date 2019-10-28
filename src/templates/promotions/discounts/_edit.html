@@ -125,7 +125,7 @@
             {{ forms.field({
                 'label': 'Times Coupon Used'|t('commerce'),
                 'id': 'total-coupon-use-counter',
-                'instructions': "How many times this coupon has been used, if a total coupon usage limit has been set."|t('commerce'),
+                'instructions': "How many times this discount has been used with a coupon code."|t('commerce'),
             }, '<input disabled class="text disabled fullwidth" value="' ~ discount.totalUses ~ ' times">') }}
 
             {% if discount.id and discount.code|length %}
@@ -296,6 +296,14 @@
             id: 'percentDiscount',
             errors: discount.getErrors('percentDiscount'),
         }, pctDiscountInput) }}
+
+        {{ forms.checkboxField({
+            label: "Ignore sales when this discount is applied."|t('commerce'),
+            id: 'ignoreSales',
+            name: 'ignoreSales',
+            value: 1,
+            checked: discount.ignoreSales
+        }) }}
 
         {{ forms.checkboxField({
             label: "Remove all shipping costs from the order"|t('commerce'),

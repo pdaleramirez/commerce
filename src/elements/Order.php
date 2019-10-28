@@ -308,6 +308,18 @@ class Order extends Element
     public $shippingAddressId;
 
     /**
+     * @var int Billing address ID
+     * @since 2.2
+     */
+    public $estimatedBillingAddressId;
+
+    /**
+     * @var int Shipping address ID
+     * @since 2.2
+     */
+    public $estimatedShippingAddressId;
+
+    /**
      * @var bool Whether shipping address should be made primary
      */
     public $makePrimaryShippingAddress;
@@ -326,6 +338,12 @@ class Order extends Element
      * @var bool Whether billing address should be set to the same address as shipping
      */
     public $billingSameAsShipping;
+
+    /**
+     * @var bool Whether estimated billing address should be set to the same address as estimated shipping
+     * @since 2.2
+     */
+    public $estimatedBillingSameAsShipping;
 
     /**
      * @var string Shipping Method Handle
@@ -351,6 +369,18 @@ class Order extends Element
      * @var Address
      */
     private $_billingAddress;
+
+    /**
+     * @var Address
+     * @since 2.2
+     */
+    private $_estimatedShippingAddress;
+
+    /**
+     * @var Address
+     * @since 2.2
+     */
+    private $_estimatedBillingAddress;
 
     /**
      * @var LineItem[]
@@ -575,7 +605,7 @@ class Order extends Element
         $justPaid = $paidInFull && $this->datePaid === null;
 
         // If it is no longer paid in full, set datePaid to null
-        if(!$paidInFull) {
+        if (!$paidInFull) {
             $this->datePaid = null;
         }
 
@@ -623,8 +653,8 @@ class Order extends Element
         $itemTotal = $this->getItemSubtotal();
 
         $allNonIncludedAdjustmentsTotal = $this->getAdjustmentsTotal();
-        $taxAdjustments = $this->getAdjustmentsTotalByType('tax');
-        $includedTaxAdjustments = $this->getAdjustmentsTotalByType('tax', true);
+        $taxAdjustments = $this->getTotalTax();
+        $includedTaxAdjustments = $this->getTotalTaxIncluded();
 
         return $itemTotal + $allNonIncludedAdjustmentsTotal - ($taxAdjustments + $includedTaxAdjustments);
     }
@@ -681,12 +711,14 @@ class Order extends Element
             $mutex->release($lockName);
             return true;
         }
-        // Release after we have confirmed this order is not already complete
-
-        $mutex->release($lockName);
 
         $this->isCompleted = true;
         $this->dateOrdered = Db::prepareDateForDb(new DateTime());
+
+        // Reset estimated address relations
+        $this->estimatedShippingAddressId = null;
+        $this->estimatedBillingAddressId = null;
+
         $orderStatus = Plugin::getInstance()->getOrderStatuses()->getDefaultOrderStatusForOrder($this);
 
         // If the order status returned was overridden by a plugin, use the configured default order status if they give us a bogus one with no ID.
@@ -710,17 +742,20 @@ class Order extends Element
             $this->trigger(self::EVENT_BEFORE_COMPLETE_ORDER);
         }
 
-        if (Craft::$app->getElements()->saveElement($this, false)) {
+        $success = Craft::$app->getElements()->saveElement($this, false);
 
-            $this->afterOrderComplete();
+        $mutex->release($lockName);
 
-            return true;
+        if (!$success) {
+            Craft::error(Craft::t('commerce', 'Could not mark order {number} as complete. Order save failed during order completion with errors: {order}',
+                ['number' => $this->number, 'order' => json_encode($this->errors)]), __METHOD__);
+
+            return false;
         }
 
-        Craft::error(Craft::t('commerce', 'Could not mark order {number} as complete. Order save failed during order completion with errors: {order}',
-            ['number' => $this->number, 'order' => json_encode($this->errors)]), __METHOD__);
+        $this->afterOrderComplete();
 
-        return false;
+        return true;
     }
 
     /**
@@ -890,6 +925,16 @@ class Order extends Element
      */
     public function afterSave(bool $isNew)
     {
+        // Make sure addresses are set before recalculation so that on the next page load
+        // the correct adjustments and totals are shown
+        if ($this->shippingSameAsBilling) {
+            $this->setShippingAddress($this->getBillingAddress());
+        }
+
+        if ($this->billingSameAsShipping) {
+            $this->setBillingAddress($this->getShippingAddress());
+        }
+
         // TODO: Move the recalculate to somewhere else. Saving should be for saving only
         // Right now orders always recalc when saved and not completed but that shouldn't always be the case.
         $this->recalculate();
@@ -936,14 +981,6 @@ class Order extends Element
         $customer = $this->getCustomer();
         $existingAddresses = $customer ? $customer->getAddresses() : [];
 
-        if ($this->shippingSameAsBilling) {
-            $this->setShippingAddress($this->getBillingAddress());
-        }
-
-        if ($this->billingSameAsShipping) {
-            $this->setBillingAddress($this->getShippingAddress());
-        }
-
         // Save shipping address, it has already been validated.
         if ($shippingAddress = $this->getShippingAddress()) {
             // We need to only save the address to the customers address book while it is a cart
@@ -968,6 +1005,26 @@ class Order extends Element
 
             $orderRecord->billingAddressId = $billingAddress->id;
             $this->setBillingAddress($billingAddress);
+        }
+
+        if ($estimatedShippingAddress = $this->getEstimatedShippingAddress()) {
+            Plugin::getInstance()->getAddresses()->saveAddress($estimatedShippingAddress, false);
+
+            $orderRecord->estimatedShippingAddressId = $estimatedShippingAddress->id;
+            $this->setEstimatedShippingAddress($estimatedShippingAddress);
+
+            // If estimate billing same as shipping set it here
+            if ($this->estimatedBillingSameAsShipping) {
+                $orderRecord->estimatedBillingAddressId = $estimatedShippingAddress->id;
+                $this->setEstimatedBillingAddress($estimatedShippingAddress);
+            }
+        }
+
+        if (!$this->estimatedBillingSameAsShipping && $estimatedBillingAddress = $this->getEstimatedBillingAddress()) {
+            Plugin::getInstance()->getAddresses()->saveAddress($estimatedBillingAddress, false);
+
+            $orderRecord->estimatedBillingAddressId = $estimatedBillingAddress->id;
+            $this->setEstimatedBillingAddress($estimatedBillingAddress);
         }
 
         $orderRecord->save(false);
@@ -1201,7 +1258,7 @@ class Order extends Element
         }
 
         if ($strategy === Settings::MINIMUM_TOTAL_PRICE_STRATEGY_SHIPPING) {
-            return Currency::round(max($this->getAdjustmentsTotalByType('shipping'), $total));
+            return Currency::round(max($this->getTotalShippingCost(), $total));
         }
 
         return Currency::round($total);
@@ -1327,8 +1384,21 @@ class Order extends Element
      * @param string|array $types
      * @param bool $included
      * @return float|int
+     * @deprecated in 2.2
      */
     public function getAdjustmentsTotalByType($types, $included = false)
+    {
+        Craft::$app->getDeprecator()->log('Order::getAdjustmentsTotalByType()', 'Order::getAdjustmentsTotalByType() has been deprecated. Use Order::getTotalTax(), Order::getTotalDiscount(), Order::getTotalShippingCost() instead.');
+
+        return $this->_getAdjustmentsTotalByType($types, $included);
+    }
+
+    /**
+     * @param string|array $types
+     * @param bool $included
+     * @return float|int
+     */
+    public function _getAdjustmentsTotalByType($types, $included = false)
     {
         $amount = 0;
 
@@ -1343,6 +1413,40 @@ class Order extends Element
         }
 
         return $amount;
+    }
+
+    /**
+     * @return float
+     */
+    public function getTotalTax(): float
+    {
+        return $this->_getAdjustmentsTotalByType('tax');
+    }
+
+    /**
+     * @return float
+     */
+    public function getTotalTaxIncluded(): float
+    {
+        return $this->_getAdjustmentsTotalByType('tax', true);
+    }
+
+    /**
+     * @return float
+     */
+    public function getTotalDiscount(): float
+    {
+
+        return $this->_getAdjustmentsTotalByType('discount');
+    }
+
+    /**
+     * @return float
+     */
+    public function getTotalShippingCost(): float
+    {
+
+        return $this->_getAdjustmentsTotalByType('shipping');
     }
 
     /**
@@ -1485,6 +1589,34 @@ class Order extends Element
 
     /**
      * @return Address|null
+     * @since 2.2
+     */
+    public function getEstimatedShippingAddress()
+    {
+        if (null === $this->_estimatedShippingAddress && $this->estimatedShippingAddressId) {
+            $this->_estimatedShippingAddress = Plugin::getInstance()->getAddresses()->getAddressById($this->estimatedShippingAddressId);
+        }
+
+        return $this->_estimatedShippingAddress;
+    }
+
+    /**
+     * @param Address|array $address
+     * @since 2.2
+     */
+    public function setEstimatedShippingAddress($address)
+    {
+        if (!$address instanceof Address) {
+            $address = new Address($address);
+        }
+        $address->isEstimated = true;
+
+        $this->estimatedShippingAddressId = $address->id;
+        $this->_estimatedShippingAddress = $address;
+    }
+
+    /**
+     * @return Address|null
      */
     public function getBillingAddress()
     {
@@ -1506,6 +1638,34 @@ class Order extends Element
 
         $this->billingAddressId = $address->id;
         $this->_billingAddress = $address;
+    }
+
+    /**
+     * @return Address|null
+     * @since 2.2
+     */
+    public function getEstimatedBillingAddress()
+    {
+        if (null === $this->_estimatedBillingAddress && $this->estimatedBillingAddressId) {
+            $this->_estimatedBillingAddress = Plugin::getInstance()->getAddresses()->getAddressById($this->estimatedBillingAddressId);
+        }
+
+        return $this->_estimatedBillingAddress;
+    }
+
+    /**
+     * @param Address|array $address
+     * @since 2.2
+     */
+    public function setEstimatedBillingAddress($address)
+    {
+        if (!$address instanceof Address) {
+            $address = new Address($address);
+        }
+        $address->isEstimated = true;
+
+        $this->estimatedBillingAddressId = $address->id;
+        $this->_estimatedBillingAddress = $address;
     }
 
     /**
@@ -1818,12 +1978,12 @@ class Order extends Element
             }
             case 'totalShippingCost':
             {
-                $amount = $this->getAdjustmentsTotalByType('shipping');
+                $amount = $this->getTotalShippingCost();
                 return Craft::$app->getFormatter()->asCurrency($amount, $this->currency);
             }
             case 'totalDiscount':
             {
-                $amount = $this->getAdjustmentsTotalByType('discount');
+                $amount = $this->getTotalDiscount();
                 if ($this->$attribute >= 0) {
                     return Craft::$app->getFormatter()->asCurrency($amount, $this->currency);
                 }
@@ -1832,12 +1992,12 @@ class Order extends Element
             }
             case 'totalTax':
             {
-                $amount = $this->getAdjustmentsTotalByType('tax');
+                $amount = $this->getTotalTax();
                 return Craft::$app->getFormatter()->asCurrency($amount, $this->currency);
             }
             case 'totalIncludedTax':
             {
-                $amount = $this->getAdjustmentsTotalByType('tax', true);
+                $amount = $this->getTotalTaxIncluded();
                 return Craft::$app->getFormatter()->asCurrency($amount, $this->currency);
             }
             default:
@@ -1934,17 +2094,16 @@ class Order extends Element
                 'label' => $orderStatus->name,
                 'criteria' => $criteriaStatus,
                 'defaultSort' => ['dateOrdered', 'desc'],
-                'badgeCount' => $count
+                'badgeCount' => $count,
+                'data' => [
+                    'handle' => $orderStatus->handle
+                ]
             ];
         }
 
         $sources[] = ['heading' => Craft::t('commerce', 'Carts')];
 
-        $edge = new DateTime();
-        $interval = new DateInterval('PT1H');
-        $interval->invert = 1;
-        $edge->add($interval);
-        $edge = $edge->format(DateTime::ATOM);
+        $edge = Plugin::getInstance()->getCarts()->getActiveCartEdgeDuration();
 
         $updatedAfter = [];
         $updatedAfter[] = '>= ' . $edge;
@@ -1955,6 +2114,9 @@ class Order extends Element
             'label' => Craft::t('commerce', 'Active Carts'),
             'criteria' => $criteriaActive,
             'defaultSort' => ['commerce_orders.dateUpdated', 'asc'],
+            'data' => [
+                'handle' => 'cartsActive'
+            ]
         ];
         $updatedBefore = [];
         $updatedBefore[] = '< ' . $edge;
@@ -1964,7 +2126,10 @@ class Order extends Element
             'key' => 'carts:inactive',
             'label' => Craft::t('commerce', 'Inactive Carts'),
             'criteria' => $criteriaInactive,
-            'defaultSort' => ['commerce_orders.dateUpdated', 'desc']
+            'defaultSort' => ['commerce_orders.dateUpdated', 'desc'],
+            'data' => [
+                'handle' => 'cartsInactive'
+            ]
         ];
 
         $criteriaAttemptedPayment = ['hasTransactions' => true, 'isCompleted' => 'not 1'];
@@ -1973,6 +2138,9 @@ class Order extends Element
             'label' => Craft::t('commerce', 'Attempted Payments'),
             'criteria' => $criteriaAttemptedPayment,
             'defaultSort' => ['commerce_orders.dateUpdated', 'desc'],
+            'data' => [
+                'handle' => 'cartsAttemptedPayment'
+            ]
         ];
 
         return $sources;
@@ -2141,17 +2309,17 @@ class Order extends Element
             ->where(['orderId' => $this->id])
             ->all();
 
-        $newLineItemIds = [];
+        $currentLineItemIds = [];
 
         // Determine the line items that will be saved
         foreach ($this->getLineItems() as $lineItem) {
             // If the ID is null that's ok, it's a new line item and will be saves anyway
-            $newLineItemIds[] = $lineItem->id;
+            $currentLineItemIds[] = $lineItem->id;
         }
 
         // Delete any line items that no longer will be saved on this order.
         foreach ($previousLineItems as $previousLineItem) {
-            if (!in_array($previousLineItem->id, $newLineItemIds, false)) {
+            if (!in_array($previousLineItem->id, $currentLineItemIds, false)) {
                 $previousLineItem->delete();
             }
         }

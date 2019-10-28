@@ -44,6 +44,7 @@ use yii2tech\ar\position\PositionBehavior;
  * @property int $purchaseTotal
  * @property int $sortOrder
  * @property bool $stopProcessing
+ * @property bool $ignoreSales
  * @property int $totalUseLimit
  * @property int $totalUses
  * @mixin PositionBehavior
