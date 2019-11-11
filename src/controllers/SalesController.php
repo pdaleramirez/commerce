@@ -18,7 +18,9 @@ use craft\elements\Category;
 use craft\helpers\ArrayHelper;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\Json;
+use craft\helpers\UrlHelper;
 use craft\i18n\Locale;
+use craft\web\assets\admintable\AdminTableAsset;
 use Exception;
 use function explode;
 use function get_class;
@@ -55,7 +57,30 @@ class SalesController extends BaseCpController
     public function actionIndex(): Response
     {
         $sales = Plugin::getInstance()->getSales()->getAllSales();
+        $this->getView()->registerAssetBundle(AdminTableAsset::class);
         return $this->renderTemplate('commerce/promotions/sales/index', compact('sales'));
+    }
+
+    public function actionGetAdminTableData() {
+        $sales = Plugin::getInstance()->getSales()->getAllSales();
+
+        $data = [];
+        foreach ($sales as $sale) {
+            $data[] = [
+                'id' => (int)$sale->id,
+                'status' => (bool)$sale->enabled,
+                'name' => $sale->name,
+                'url' => UrlHelper::cpUrl('commerce/promotions/sales/' . $sale->id),
+                'duration' => 'duration',
+                'discountAmount' => 'discountAmount',
+                'ignorePrevious' => (bool)$sale->ignorePrevious,
+                'stopProcessing' => (bool)$sale->stopProcessing,
+            ];
+        }
+
+        $count = count($data);
+
+        return $this->asJson(compact('data', 'count'));
     }
 
     /**
