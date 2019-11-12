@@ -227,50 +227,50 @@ var vueAdminTable = new Craft.VueAdminTable({
     }
 });
 
-{#var vueAdminTableServer = new Craft.VueAdminTable({#}
-{#    container: '.vue-admin-table-server',#}
-{#    deleteAction: 'commerce/sales/delete',#}
-{#    url: 'commerce/sales/get-admin-table-data',#}
-{#    columns: [#}
-{#        'checkbox',#}
-{#        'statusName',#}
-{#        'duration',#}
-{#        'discountAmount',#}
-{#        'ignorePrevious',#}
-{#        'stopProcessing',#}
-{#        'delete'#}
-{#    ],#}
-{#    options: {#}
-{#        columnsClasses: {#}
-{#            delete: 'thin'#}
-{#        },#}
-{#        perPage: 100,#}
-{#        headings: {#}
-{#            checkbox: '',#}
-{#            statusName: Craft.t('commerce', 'Name'),#}
-{#            duration: Craft.t('commerce', 'Duration'),#}
-{#            discountAmount: Craft.t('commerce', 'Effect'),#}
-{#            ignorePrevious: Craft.t('commerce', 'Ignore Previous?'),#}
-{#            stopProcessing: Craft.t('commerce', 'Stop Processing?'),#}
-{#            delete: ''#}
-{#        },#}
-{#        templates: {#}
-{#            ignorePrevious: function(h, row, index) {#}
-{#                if (row.ignorePrevious) {#}
-{#                    return h('span', { attrs: {'data-icon': 'check'} });#}
-{#                }#}
+var vueAdminTableServer = new Craft.VueAdminTable({
+    container: '.vue-admin-table-server',
+    deleteAction: 'commerce/sales/delete',
+    url: 'commerce/sales/get-admin-table-data',
+    columns: [
+        'checkbox',
+        'statusName',
+        'duration',
+        'discountAmount',
+        'ignorePrevious',
+        'stopProcessing',
+        'delete'
+    ],
+    options: {
+        columnsClasses: {
+            delete: 'thin'
+        },
+        perPage: 100,
+        headings: {
+            checkbox: '',
+            statusName: Craft.t('commerce', 'Name'),
+            duration: Craft.t('commerce', 'Duration'),
+            discountAmount: Craft.t('commerce', 'Effect'),
+            ignorePrevious: Craft.t('commerce', 'Ignore Previous?'),
+            stopProcessing: Craft.t('commerce', 'Stop Processing?'),
+            delete: ''
+        },
+        templates: {
+            ignorePrevious: function(h, row, index) {
+                if (row.ignorePrevious) {
+                    return h('span', { attrs: {'data-icon': 'check'} });
+                }
 
-{#                return '';#}
-{#            },#}
-{#            stopProcessing: function(h, row, index) {#}
-{#                if (row.stopProcessing) {#}
-{#                    return h('span', { attrs: {'data-icon': 'check'} });#}
-{#                }#}
+                return '';
+            },
+            stopProcessing: function(h, row, index) {
+                if (row.stopProcessing) {
+                    return h('span', { attrs: {'data-icon': 'check'} });
+                }
 
-{#                return '';#}
-{#            }#}
-{#        }#}
-{#    }#}
-{#});#}
+                return '';
+            }
+        }
+    }
+});
 
 {% endjs %}
