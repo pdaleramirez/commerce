@@ -18,6 +18,7 @@ use craft\commerce\records\Discount as DiscountRecord;
 use craft\db\Query;
 use craft\elements\Category;
 use craft\errors\MissingComponentException;
+use craft\helpers\AdminTable;
 use craft\helpers\ArrayHelper;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\Json;
@@ -344,37 +345,28 @@ class DiscountsController extends BaseCpController
         Craft::$app->getSession()->setNotice(Craft::t('commerce', 'Discounts updated.'));
     }
 
-    public function actionGetAdminTable() {
+    /**
+     * @return Response
+     * @throws BadRequestHttpException
+     */
+    public function actionGetAdminTable(): Response
+    {
+        $this->requireCpRequest();
         $this->requireAcceptsJson();
         $request = Craft::$app->getRequest();
+
         $page = $request->getParam('page', 1);
+        $sort = $request->getParam('sort', null);
         $limit = $request->getParam('per_page', 4);
+        $search = $request->getParam('search', null);
         $offset = ($page - 1) * $limit;
 
-
-        $discounts = Plugin::getInstance()->getDiscounts()->getAdminTableData($offset, $limit);
-        $total = count(Plugin::getInstance()->getDiscounts()->getAllDiscounts());
-        $lastPage = ceil($total / $limit);
-        $nextPageUrl = '?next';
-        $prevPageUrl = '?prev';
-        $from = ($page * $limit) - $limit;
-        $to = $from + $limit;
-        $to = $to > $total ? $total : $to;
-        $from++;
+        $discounts = Plugin::getInstance()->getDiscounts()->getAdminTableData($offset, $limit, $sort, $search);
+        $discountsAll = Plugin::getInstance()->getDiscounts()->getAdminTableData(0, null, $sort, $search);
+        $total = count($discountsAll);
 
         return $this->asJson([
-            'links' => [
-                'pagination' => [
-                    'total' => (int)$total,
-                    'per_page' => (int)$limit,
-                    'current_page' => (int)$page,
-                    'last_page' => (int)$lastPage,
-                    'next_page_url' => $nextPageUrl,
-                    'prev_page_url' => $prevPageUrl,
-                    'from' => (int)$from,
-                    'to' => (int)$to,
-                ]
-            ],
+            'pagination' => AdminTable::paginationLinks($page, $total, $limit),
             'data' => $discounts
         ]);
     }

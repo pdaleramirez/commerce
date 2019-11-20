@@ -1,6 +1,21 @@
 {% extends "commerce/_layouts/promotions" %}
 {% set selectedSidebarNavItem = 'discounts' %}
 
+{% set tableData = [] %}
+{% for discount in discounts %}
+    {% set tableData = tableData|merge([{
+        id: discount.id,
+        name: discount.name,
+        status: discount.enabled ? true : false,
+        url: url('commerce/promotions/discounts/' ~ discount.id),
+        code: discount.code,
+        duration: (discount.dateFrom ? discount.dateFrom|datetime('short'): '∞') ~ ' - ' ~ (discount.dateTo ? discount.dateTo|datetime('short') : '∞'),
+        totalUses: discount.totalUses,
+        stopProcessing: discount.stopProcessing ? true : false,
+        ignoreSales: discount.ignoreSales ? true : false,
+    }]) %}
+{% endfor %}
+
 {% block actionButton %}
     <div class="buttons">
         <a href="{{ url('commerce/promotions/discounts/new') }}"
@@ -78,100 +93,12 @@
         <br>
         <br>
 
-        {% set actions = [
-            {
-                label: 'Set Status'|t,
-                actions: [
-                    {
-                        label: 'Enabled'|t,
-                        action: 'commerce/discounts/update-statuses',
-                        param: 'status',
-                        value: 'enabled',
-                        status: 'enabled'
-                    },
-                    {
-                        label: 'Disabled'|t,
-                        action: 'commerce/discounts/update-statuses',
-                        param: 'status',
-                        value: 'disabled',
-                        status: 'disabled'
-                    }
-                ]
-            },
-            {
-                label: '',
-                icon: 'settings',
-                actions: [
-                    {
-                        label: 'Move up'|t,
-                        action: 'commerce/discounts/update-sort-order',
-                        param: 'move',
-                        value: 'up',
-                        ajax: true
-                    },
-                    {
-                        label: 'Move down'|t,
-                        action: 'commerce/discounts/update-sort-order',
-                        param: 'move',
-                        value: 'down',
-                        ajax: true
-                    },
-                    {
-                        label: 'Move To Top'|t,
-                        action: 'commerce/discounts/update-sort-order',
-                        param: 'move',
-                        value: 'top',
-                        ajax: true
-                    },
-                    {
-                        label: 'Move To Bottom'|t,
-                        action: 'commerce/discounts/update-sort-order',
-                        param: 'move',
-                        value: 'bottom',
-                        ajax: true
-                    }
-                ]
-            }
-        ] %}
-
-
-        <div id="admin-table"
-             data-endpoint="commerce/discounts/get-admin-table"
-            data-checkboxes="true"
-            data-reorder="true"
-             data-reorder-action-url="commerce/discounts/update-sort-order"
-             data-per-page="3"
-             data-columns='{{ [
-                 {
-                     name: 'name',
-                     title: 'Name'|t('commmerce'),
-                     dataClass: 'cell-bold'
-                 },
-                 {
-                     name: 'code',
-                     title: 'Code'|t('commerce')
-                 },
-                 {
-                     name: 'duration',
-                     title: 'Duration'|t('commerce')
-                 },
-                 {
-                     name: 'totalUses',
-                     title: 'Times Used'|t('commerce')
-                 },
-                 {
-                     name: 'stopProcessing',
-                     title: 'Stop Processing?'|t('commerce')
-                 }
-             ]|json_encode|raw }}'
-             data-action-buttons='{{ actions|json_encode|raw }}'
-             data-delete-action-url="commerce/discounts/delete"
-        ></div>
+        <h2>API mode</h2>
+        <div id="discounts-admin-table"></div>
+        <hr>
+        <h2>Data Mode</h2>
+        <div id="discounts-admin-table2"></div>
     {% endif %}
-{% endblock %}
-
-{% block footer %}
-    <div id="admin-table-pagination"></div>
 {% endblock %}
 
 {% js %}
@@ -184,4 +111,110 @@
       reorderSuccessMessage: Craft.t('commerce', 'Discounts reordered.') ,
       reorderFailMessage:    Craft.t('commerce', 'Couldn’t reorder discounts.')
     });
+
+    var columns = [
+        { name: '__slot:statusName', title: Craft.t('commerce', 'Name'), sortField: 'name' },
+        { name: 'code', title: Craft.t('commerce', 'Code') },
+        { name: 'duration', title: Craft.t('commerce', 'Duration') },
+        { name: 'totalUses', title: Craft.t('commerce', 'Times Used'), sortField: 'totalUses' },
+        {
+            name: 'stopProcessing',
+            title: Craft.t('commerce', 'Stop Processing'),
+            callback: function(value) {
+                return (value) ? '<span data-icon="check" title="'+Craft.t('app', 'Yes')+'"></span>' : '<span></span>';
+            }
+        },
+        {
+            name: 'ignoreSales',
+            title: Craft.t('commerce', 'Ignore Sales?'),
+            callback: function(value) {
+                return (value) ? '<span data-icon="check" title="'+Craft.t('app', 'Yes')+'"></span>' : '<span></span>';
+            }
+        }
+    ];
+
+    var actions = [
+        {
+            label: Craft.t('app','Set Status'),
+            actions: [
+                {
+                    label: Craft.t('app', 'Enabled'),
+                    action: 'commerce/discounts/update-statuses',
+                    param: 'status',
+                    value: 'enabled',
+                    status: 'enabled'
+                },
+                {
+                    label: Craft.t('app', 'Disabled'),
+                    action: 'commerce/discounts/update-statuses',
+                    param: 'status',
+                    value: 'disabled',
+                    status: 'disabled'
+                }
+            ]
+        },
+        {
+            label: 'Reorder',
+            actions: [
+                {
+                    label: Craft.t('app', 'Move up'),
+                    action: 'commerce/discounts/update-sort-order',
+                    param: 'move',
+                    value: 'up',
+                    ajax: true
+                },
+                {
+                    label: Craft.t('app', 'Move down'),
+                    action: 'commerce/discounts/update-sort-order',
+                    param: 'move',
+                    value: 'down',
+                    ajax: true
+                },
+                {
+                    label: Craft.t('app', 'Move To Top'),
+                    action: 'commerce/discounts/update-sort-order',
+                    param: 'move',
+                    value: 'top',
+                    ajax: true
+                },
+                {
+                    label: Craft.t('app', 'Move To Bottom'),
+                    action: 'commerce/discounts/update-sort-order',
+                    param: 'move',
+                    value: 'bottom',
+                    ajax: true
+                }
+            ]
+        }
+    ];
+
+    var vueAdminTable = new Craft.VueAdminTable({
+        actions: actions,
+        checkboxes: true,
+        columns: columns,
+        container: '#discounts-admin-table',
+        deleteAction: 'commerce/discounts/delete',
+        perPage: 2,
+        reorderAction: 'commerce/discounts/update-sort-order',
+        // reorderSuccessMessage: Craft.t('commerce', 'Items reordered.') ,
+        // reorderFailMessage:    Craft.t('commerce', 'Couldn’t reorder items.'),
+        search: true,
+        // tableData: [],
+        tableDataEndpoint: 'commerce/discounts/get-admin-table',
+    });
+
+
+var vueAdminTable = new Craft.VueAdminTable({
+    // actions: [],
+    // checkboxes: false,
+    columns: columns,
+    container: '#discounts-admin-table2',
+    deleteAction: 'commerce/discounts/delete',
+    perPage: 2,
+    // reorderAction: 'commerce/discounts/update-sort-order',
+    // reorderSuccessMessage: Craft.t('commerce', 'Items reordered.') ,
+    // reorderFailMessage:    Craft.t('commerce', 'Couldn’t reorder items.'),
+    tableData: {{ tableData|json_encode|raw }},
+    // tableDataEndpoint: 'commerce/discounts/get-admin-table',
+});
 {% endjs %}

@@ -717,29 +717,41 @@ class Discounts extends Component
     /**
      * @param int $offset
      * @param int $limit
+     * @param null|string $sort
+     * @param null|string $search
      * @return array
      */
-    public function getAdminTableData($offset = 0, $limit = 20): array
+    public function getAdminTableData($offset = 0, $limit = 20, $sort = null, $search = null): array
     {
-        $discounts = $this->_createDiscountQuery()
+        $discountQuery = $this->_createDiscountQuery()
             ->offset($offset)
-            ->limit($limit)
-            ->all();
+            ->limit($limit);
+
+        if (is_string($sort) && strpos($sort, '|')) {
+            [$column, $direction] = explode('|', $sort);
+            $discountQuery->orderBy($column . ' ' . $direction);
+        }
+
+        if ($search !== null) {
+            $discountQuery->where(['like', 'name', $search]);
+        }
+
+        $discounts = $discountQuery->all();
 
         $data = [];
         foreach ($discounts as $discount) {
-            $status = $discount['enabled'] ? 'enabled' : 'disabled';
             $url = UrlHelper::cpUrl('commerce/promotions/discounts/' . $discount['id']);
-            $name = sprintf('<span class="status %s"></span><a href="%s">%s</a>', $status, $url, $discount['name']);
-            $stopProcessing = $discount['stopProcessing'] ? sprintf('<span data-icon="check" title="%s"></span>', Craft::t('commerce', 'Yes')) : '' ;
 
             $data[] = [
                 'id' => (int)$discount['id'],
-                'name' => $name,
+                'name' => $discount['name'],
+                'status' => (bool)$discount['enabled'],
+                'url' => $url,
                 'code' => $discount['code'],
                 'duration' => ($discount['dateFrom'] ? $discount['dateFrom']->format('short') : '∞') . ' - ' .($discount['dateTo'] ? $discount['dateTo']->format('short') : '∞'),
                 'totalUses' => $discount['totalUses'],
-                'stopProcessing' => $stopProcessing
+                'stopProcessing' => (bool)$discount['stopProcessing'],
+                'ignoreSales' => (bool)$discount['ignoreSales'],
             ];
         }
 
