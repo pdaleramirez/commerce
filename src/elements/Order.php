@@ -9,6 +9,7 @@ namespace craft\commerce\elements;
 
 use Craft;
 use craft\base\Element;
+use craft\commerce\adjusters\Tax;
 use craft\commerce\base\AdjusterInterface;
 use craft\commerce\base\Gateway;
 use craft\commerce\base\GatewayInterface;
@@ -36,6 +37,7 @@ use craft\commerce\Plugin;
 use craft\commerce\records\LineItem as LineItemRecord;
 use craft\commerce\records\Order as OrderRecord;
 use craft\commerce\records\OrderAdjustment as OrderAdjustmentRecord;
+use craft\commerce\records\TaxRate;
 use craft\db\Query;
 use craft\elements\actions\Delete;
 use craft\elements\actions\Restore;
@@ -650,13 +652,33 @@ class Order extends Element
      */
     public function getTotalTaxablePrice(): float
     {
-        $itemTotal = $this->getItemSubtotal();
+        $adjustments = $this->getAdjustments();
+        $hasTaxOnShipping = false;
+        $nonIncludedShippingTotal = 0;
+        $shippingTaxSubjects = [
+            TaxRate::TAXABLE_ORDER_TOTAL_SHIPPING,
+            TaxRate::TAXABLE_SHIPPING,
+            TaxRate::TAXABLE_PRICE_SHIPPING,
+            TaxRate::TAXABLE_ORDER_TOTAL_SHIPPING,
+            TaxRate::TAXABLE_ORDER_TOTAL_PRICE,
+        ];
 
-        $allNonIncludedAdjustmentsTotal = $this->getAdjustmentsTotal();
-        $taxAdjustments = $this->getTotalTax();
-        $includedTaxAdjustments = $this->getTotalTaxIncluded();
+        foreach ($adjustments as $adjustment) {
+            $snapshot = $adjustment->getSourceSnapshot();
+            if ($adjustment->type == Tax::ADJUSTMENT_TYPE && in_array($snapshot['taxable'], $shippingTaxSubjects, true)) {
+                $hasTaxOnShipping = true;
+            }
 
-        return $itemTotal + $allNonIncludedAdjustmentsTotal - ($taxAdjustments + $includedTaxAdjustments);
+            if ($adjustment->type != Tax::ADJUSTMENT_TYPE && !$adjustment->included) {
+                $nonIncludedShippingTotal += $adjustment->amount;
+            }
+        }
+
+        $total = $this->getItemSubtotal();
+        $total = ($hasTaxOnShipping) ? $total + $nonIncludedShippingTotal : $total;
+        $total -= $this->getTotalTaxIncluded();
+
+        return $total;
     }
 
     /**
