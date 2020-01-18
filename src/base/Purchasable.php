@@ -304,4 +304,17 @@ abstract class Purchasable extends Element implements PurchasableInterface
             }
         }
     }
+
+    /**
+     * @inheritdoc
+     */
+    public function getSupportedSites(): array
+    {
+        $sites[] = [
+            'siteId' => $this->siteId,
+            'enabledByDefault' => 1
+        ];
+
+        return $sites;
+    }
 }

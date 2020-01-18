@@ -32,6 +32,8 @@ use craft\helpers\ArrayHelper;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\UrlHelper;
 use craft\models\CategoryGroup;
+use craft\models\Section;
+use craft\models\Site;
 use craft\validators\DateTimeValidator;
 use DateTime;
 use yii\base\Exception;
@@ -1230,5 +1232,18 @@ class Product extends Element
                 return parent::tableAttributeHtml($attribute);
             }
         }
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getSupportedSites(): array
+    {
+        $sites[] = [
+            'siteId' => $this->siteId,
+            'enabledByDefault' => 1
+        ];
+
+        return $sites;
     }
 }
