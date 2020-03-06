@@ -126,7 +126,7 @@ class LineItems extends Component
      *         $lineItem = $event->lineItem;
      *         // @var bool $isNew
      *         $isNew = $event->isNew;
-     * 
+     *
      *         // Modify the price of a line item
      *         // ...
      *     }

@@ -65,6 +65,12 @@ class Carts extends Component
             $this->_cart->number = $this->getSessionCartNumber();
         }
 
+        $site = Craft::$app->sites->getCurrentSite();
+
+        if ($site) {
+			$this->_cart->siteId = $site->id;
+		}
+
         // Ensure the session knows what the current cart is.
         $this->setSessionCartNumber($this->_cart->number);
 

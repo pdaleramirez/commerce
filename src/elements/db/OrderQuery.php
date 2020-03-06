@@ -86,7 +86,7 @@ class OrderQuery extends ElementQuery
      * @var mixed The date the order was authorized in full.
      */
     public $dateAuthorized;
-    
+
     /**
      * @var int The Order Status ID that the resulting orders must have.
      */

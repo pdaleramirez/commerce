@@ -165,7 +165,7 @@ class Order extends Element
      * use craft\commerce\events\LineItemEvent;
      * use craft\commerce\models\LineItem;
      * use yii\base\Event;
-     * 
+     *
      * Event::on(
      *     Order::class,
      *     Order::EVENT_AFTER_ADD_LINE_ITEM,
@@ -251,7 +251,7 @@ class Order extends Element
      * ```php
      * use craft\commerce\elements\Order;
      * use yii\base\Event;
-     * 
+     *
      * Event::on(
      *     Order::class,
      *     Order::EVENT_AFTER_ORDER_PAID,
@@ -882,6 +882,8 @@ class Order extends Element
      * ```
      */
     private $_email;
+
+    public $multipleOrderId;
 
 
     /**
@@ -2689,4 +2691,22 @@ class Order extends Element
             }
         }
     }
+
+	/**
+	 * @inheritdoc
+	 */
+	public function getSupportedSites(): array
+	{
+		$sites[] = [
+			'siteId' => $this->siteId,
+			'enabledByDefault' => 1
+		];
+
+		return $sites;
+	}
+
+	public static function isLocalized(): bool
+	{
+		return true;
+	}
 }

@@ -69,14 +69,18 @@ class CartController extends BaseFrontEndController
         $this->requirePostRequest();
         $currentUser = Craft::$app->getUser()->getIdentity();
         $isSiteRequest = Craft::$app->getRequest()->getIsSiteRequest();
+		// Services we will be using.
+		$request = Craft::$app->getRequest();
+
+        if (($siteId = $request->getParam('siteId')) !== null) {
+			Craft::$app->sites->setCurrentSite($siteId);
+		}
+
         /** @var Plugin $plugin */
         $plugin = Plugin::getInstance();
 
         // Get the cart from the request or from the session.
         $this->_cart = $this->_getCart(true);
-
-        // Services we will be using.
-        $request = Craft::$app->getRequest();
 
         // Set the custom fields submitted
         $this->_cart->setFieldValuesFromRequest('fields');

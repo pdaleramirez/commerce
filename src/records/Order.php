@@ -11,6 +11,7 @@ use craft\commerce\db\Table;
 use craft\db\ActiveRecord;
 use craft\records\Element;
 use DateTime;
+use modules\depotisemodule\records\MultipleOrder;
 use yii\db\ActiveQueryInterface;
 
 /**
@@ -164,4 +165,9 @@ class Order extends ActiveRecord
     {
         return $this->hasOne(OrderStatus::class, ['id' => 'orderStatusId']);
     }
+
+    public function getMultipleOrders(): ActiveQueryInterface
+	{
+		return $this->hasOne(MultipleOrder::class, ['id' => 'multiple_order_id']);
+	}
 }
