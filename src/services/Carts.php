@@ -58,6 +58,7 @@ class Carts extends Component
      */
     public function getCart($forceSave = false): Order
     {
+    	$this->setCartName();
         // If there is no cart set for this request, and we can't get a cart from session, create one.
         if (null === $this->_cart && !$this->_cart = $this->_getCart()) {
             $this->forgetCart(); // Remove the cart number from session if there was one.
@@ -118,6 +119,18 @@ class Carts extends Component
 
         return $this->_cart;
     }
+
+    private function setCartName()
+	{
+		$site = Craft::$app->sites->getCurrentSite();
+
+		if ($site) {
+			$siteUId = $site->uid;
+			if ($siteUId !== null) {
+				$this->cartName = $this->cartName . ':' . $siteUId;
+			}
+		}
+	}
 
     /**
      * @return Order|null
@@ -212,12 +225,14 @@ class Carts extends Component
     /**
      * Get the session cart number or generates one if none exists.
      *
-     * @return string
-     * @throws MissingComponentException
-     */
+	 * @return string
+	 * @throws MissingComponentException
+	 * @throws \craft\errors\SiteNotFoundException
+	 */
     private function getSessionCartNumber(): string
     {
         $session = Craft::$app->getSession();
+
         $cartNumber = $session->get($this->cartName);
 
         if (!$cartNumber) {

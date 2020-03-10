@@ -40,6 +40,7 @@ use craft\helpers\UrlHelper;
 use craft\models\FieldLayout;
 use craft\web\Controller;
 use craft\web\View;
+use modules\depotisemodule\DepotiseModule;
 use Throwable;
 use Twig\Error\LoaderError;
 use Twig\Error\RuntimeError;
@@ -129,6 +130,8 @@ class OrdersController extends Controller
     public function actionEditOrder($orderId, Order $order = null): Response
     {
         $this->requirePermission('commerce-editOrders');
+
+        DepotiseModule::$app->orders->setCurrentSiteIfAuthorize($orderId);
 
         $plugin = Plugin::getInstance();
         $variables = [];

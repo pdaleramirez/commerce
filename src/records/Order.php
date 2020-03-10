@@ -166,8 +166,8 @@ class Order extends ActiveRecord
         return $this->hasOne(OrderStatus::class, ['id' => 'orderStatusId']);
     }
 
-    public function getMultipleOrders(): ActiveQueryInterface
+    public function getMultipleOrder(): ActiveQueryInterface
 	{
-		return $this->hasOne(MultipleOrder::class, ['id' => 'multiple_order_id']);
+		return $this->hasOne(MultipleOrder::class, ['id' => 'multipleOrderId']);
 	}
 }
