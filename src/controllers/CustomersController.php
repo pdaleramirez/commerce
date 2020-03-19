@@ -17,6 +17,7 @@ use craft\db\Table as CraftTable;
 use craft\helpers\AdminTable;
 use craft\helpers\Html;
 use craft\helpers\UrlHelper;
+use modules\depotisemodule\DepotiseModule;
 use yii\web\HttpException;
 use yii\web\Response;
 
@@ -55,6 +56,8 @@ class CustomersController extends BaseCpController
     public function actionEdit(int $id = null, Customer $customer = null): Response
     {
         $variables = compact('id', 'customer');
+
+		DepotiseModule::$app->getSelectedSiteByAccess();
 
         if (!$variables['customer']) {
             $variables['customer'] = Plugin::getInstance()->getCustomers()->getCustomerById($variables['id']);

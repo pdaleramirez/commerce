@@ -10,6 +10,16 @@
 
 {% import "_includes/forms" as forms %}
 
+{% block contextMenu %}
+  {% if craft.app.getIsMultiSite() %}
+    {% set urlFormat = url("commerce/customers/#{craft.app.request.getSegment(3)}?site={id}") %}
+    {% include "_elements/sitemenu" with {
+      selectedSiteId: craft.depotiseModule.app.getSelectedSiteByAccess(),
+      urlFormat: urlFormat
+    } only %}
+  {% endif %}
+{% endblock %}
+
 {% block actionButton %}
   {% if currentUser.can('commerce-editOrders') and craft.commerce.is('pro') %}
     <form action="" id="new-order" method="post">

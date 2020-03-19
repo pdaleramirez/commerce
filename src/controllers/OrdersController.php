@@ -304,6 +304,8 @@ class OrdersController extends Controller
         $this->requirePermission('commerce-manageOrders');
         $this->requireAcceptsJson();
 
+		DepotiseModule::$app->getSelectedSiteByAccess();
+
         $request = Craft::$app->getRequest();
         $page = $request->getParam('page', 1);
         $sort = $request->getParam('sort', null);
