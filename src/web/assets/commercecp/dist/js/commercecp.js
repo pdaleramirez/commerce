@@ -38,15 +38,18 @@ Craft.Commerce.AddressBox = Garnish.Modal.extend({
 
         this.$address = this.$addressBox.find('.address');
         this.address = this.$addressBox.data('address');
-        this.saveEndpoint = this.$addressBox.data('saveendpoint');
-        if (!this.saveEndpoint) {
-            this.saveEndpoint = 'commerce/addresses/save';
+
+        if (this.$address && this.address) {
+            this.saveEndpoint = this.$addressBox.data('saveendpoint');
+            if (!this.saveEndpoint) {
+                this.saveEndpoint = 'commerce/addresses/save';
+            }
+            this.setSettings(settings, this.defaults);
+
+            this._renderAddress();
+
+            this.$addressBox.toggleClass('hidden');
         }
-        this.setSettings(settings, this.defaults);
-
-        this._renderAddress();
-
-        this.$addressBox.toggleClass('hidden');
     },
     _renderAddress: function() {
         var $header = this.$addressBox.find(".address-box-header");
@@ -479,16 +482,6 @@ Craft.Commerce.OrderEdit = Garnish.Base.extend(
 
             this.$makePayment = $('#make-payment');
 
-            this.billingAddress = new Craft.Commerce.AddressBox($('#billingAddressBox'), {
-                onChange: $.proxy(this, '_updateOrderAddress', 'billingAddress'),
-                order: true
-            });
-
-            this.shippingAddress = new Craft.Commerce.AddressBox($('#shippingAddressBox'), {
-                onChange: $.proxy(this, '_updateOrderAddress', 'shippingAddress'),
-                order: true
-            });
-
             this.addListener(this.$makePayment, 'click', 'makePayment');
 
             if (Object.keys(this.paymentForm.errors).length > 0) {
@@ -510,20 +503,7 @@ Craft.Commerce.OrderEdit = Garnish.Base.extend(
 
             this.openPaymentModal();
         },
-        _updateOrderAddress: function(name, address) {
-            Craft.postActionRequest('commerce/orders/update-order-address', {
-                addressId: address.id,
-                addressType: name,
-                orderId: this.orderId
-            }, function(response) {
-                if (!response.success) {
-                    alert(response.error);
-                }
 
-                window.OrderDetailsApp.externalRefresh();
-
-            });
-        },
         _getCountries: function() {
             return window.countries;
         }
@@ -567,14 +547,8 @@ Craft.Commerce.OrderIndex = Craft.BaseElementIndex.extend({
     },
 
     updateSelectedSource() {
-        if (!this.$source) {
-            return;
-        }
-
-        var handle = this.$source.data('handle');
-        if (!handle) {
-            return;
-        }
+        var source = this.$source ? this.$source : 'all';
+        var handle = source !== 'all' ? this.$source.data('handle') : null;
 
         if (this.settings.context === 'index' && typeof history !== 'undefined') {
             var uri = 'commerce/orders';
@@ -994,7 +968,7 @@ Craft.Commerce.UpdateOrderStatusModal = Garnish.Modal.extend(
                 onOptionSelect: $.proxy(this, 'onSelectStatus')
             });
 
-            this.addListener(this.$cancelBtn, 'click', 'hide');
+            this.addListener(this.$cancelBtn, 'click', 'onCancelClick');
             this.addListener(this.$updateBtn, 'click', function(ev) {
                 ev.preventDefault();
                 if (!$(ev.target).hasClass('disabled')) {
@@ -1003,6 +977,12 @@ Craft.Commerce.UpdateOrderStatusModal = Garnish.Modal.extend(
             });
             this.base($form, settings);
         },
+
+        onCancelClick: function() {
+            Craft.elementIndex.setIndexAvailable();
+            this.hide();
+        },
+
         onSelectStatus: function(status) {
             this.deselectStatus();
 

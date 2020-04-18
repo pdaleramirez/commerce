@@ -7,15 +7,18 @@
 
 namespace craft\commerce\gql\arguments\elements;
 
+use Craft;
+use craft\commerce\elements\Product as ProductElement;
+use craft\commerce\Plugin;
 use craft\gql\base\ElementArguments;
 use craft\gql\types\QueryArgument;
 use GraphQL\Type\Definition\Type;
 
 /**
- * Class Category
+ * Class Product
  *
  * @author Pixel & Tonic, Inc. <support@pixelandtonic.com>
- * @since 3.3.0
+ * @since 3.0
  */
 class Product extends ElementArguments
 {
@@ -24,22 +27,43 @@ class Product extends ElementArguments
      */
     public static function getArguments(): array
     {
-        return array_merge(parent::getArguments(), [
+        return array_merge(parent::getArguments(),  self::getContentArguments(), [
+            'availableForPurchase' => [
+                'name' => 'availableForPurchase',
+                'type' => Type::boolean(),
+                'description' => 'Whether to only return products that are available to purchase.'
+            ],
+            'defaultPrice' => [
+                'name' => 'defaultPrice',
+                'type' => Type::listOf(QueryArgument::getType()),
+                'description' => 'Narrows the query results based on teh default price on the product.'
+            ],
             'editable' => [
                 'name' => 'editable',
                 'type' => Type::boolean(),
                 'description' => 'Whether to only return products that the user has permission to edit.'
             ],
-            'productType' => [
-                'name' => 'productType',
+            'type' => [
+                'name' => 'type',
                 'type' => Type::listOf(Type::string()),
                 'description' => 'Narrows the query results based on the product type the products belong to per the product type’s handles.'
             ],
-            'productTypeId' => [
-                'name' => 'productTypeId',
+            'typeId' => [
+                'name' => 'typeId',
                 'type' => Type::listOf(QueryArgument::getType()),
                 'description' => 'Narrows the query results based on the product types the products belong to, per the product type IDs.'
             ],
         ]);
+    }
+
+    /**
+     * @inheritdoc
+     * @since 3.x
+     */
+    public static function getContentArguments(): array
+    {
+        $productTypeFieldArguments = Craft::$app->getGql()->getContentArguments(Plugin::getInstance()->getProductTypes()->getAllProductTypes(), ProductElement::class);
+
+        return array_merge(parent::getContentArguments(), $productTypeFieldArguments);
     }
 }

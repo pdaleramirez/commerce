@@ -177,7 +177,6 @@ class Donation extends Purchasable
         if (isset($options['donationAmount'])) {
             $lineItem->price = $options['donationAmount'];
             $lineItem->salePrice = $options['donationAmount'];
-            $lineItem->saleAmount = 0;
         }
     }
 
@@ -240,6 +239,10 @@ class Donation extends Purchasable
 
         $record->sku = $this->sku;
         $record->availableForPurchase = $this->availableForPurchase;
+
+        // We want to always have the same date as the element table, based on the logic for updating these in the element service i.e resaving
+        $record->dateUpdated = $this->dateUpdated;
+        $record->dateCreated = $this->dateCreated;
 
         $record->save(false);
 

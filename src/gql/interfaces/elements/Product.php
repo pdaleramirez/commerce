@@ -68,6 +68,16 @@ class Product extends Element
     public static function getFieldDefinitions(): array
     {
         return TypeManager::prepareFieldDefinitions(array_merge(parent::getFieldDefinitions(), [
+            'availableForPurchase' => [
+                'name' => 'availableForPurchase',
+                'type' => Type::boolean(),
+                'description' => 'If the product is available for purchase.'
+            ],
+            'defaultPrice' => [
+                'name' => 'defaultPrice',
+                'type' => Type::float(),
+                'description' => 'The price of the default variant for the product.'
+            ],
             'productTypeId' => [
                 'name' => 'productTypeId',
                 'type' => Type::int(),
@@ -78,6 +88,11 @@ class Product extends Element
                 'type' => Type::string(),
                 'description' => 'The handle of the product type that contains the product.'
             ],
+            'variants' => [
+                'name' => 'variants',
+                'type' => Type::listOf(Variant::getType()),
+                'description' => 'The product’s variants.',
+            ]
         ]), self::getName());
     }
 }

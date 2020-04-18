@@ -19,12 +19,15 @@ use craft\commerce\events\CustomizeVariantSnapshotFieldsEvent;
 use craft\commerce\models\LineItem;
 use craft\commerce\models\ProductType;
 use craft\commerce\models\Sale;
+use craft\commerce\models\ShippingCategory;
+use craft\commerce\models\TaxCategory;
 use craft\commerce\Plugin;
 use craft\commerce\records\Variant as VariantRecord;
 use craft\db\Query;
 use craft\db\Table as CraftTable;
 use craft\elements\db\ElementQueryInterface;
 use craft\helpers\ArrayHelper;
+use craft\helpers\Db;
 use Throwable;
 use yii\base\Exception;
 use yii\base\InvalidConfigException;
@@ -77,17 +80,17 @@ class Variant extends Purchasable
     const EVENT_BEFORE_CAPTURE_VARIANT_SNAPSHOT = 'beforeCaptureVariantSnapshot';
 
     /**
-     * @event craft\commerce\events\CustomizeVariantSnapshotFieldsEvent The event that is triggered after a variant’s field data is captured. This makes it possible to customize, extend, or redact the data to be persisted on the variant instance.
+     * @event craft\commerce\events\CustomizeVariantSnapshotDataEvent The event that is triggered after a variant’s field data is captured. This makes it possible to customize, extend, or redact the data to be persisted on the variant instance.
      *
      * ```php
      * use craft\commerce\elements\Variant;
-     * use craft\commerce\events\CustomizeVariantSnapshotFieldsEvent;
+     * use craft\commerce\events\CustomizeVariantSnapshotDataEvent;
      * use yii\base\Event;
      *
      * Event::on(
      *     Variant::class,
      *     Variant::EVENT_AFTER_CAPTURE_VARIANT_SNAPSHOT,
-     *     function(CustomizeVariantSnapshotFieldsEvent $event) {
+     *     function(CustomizeVariantSnapshotDataEvent $event) {
      *         // @var Variant $variant
      *         $variant = $event->variant;
      *         // @var array|null $fields
@@ -172,7 +175,7 @@ class Variant extends Purchasable
     public $productId;
 
     /**
-     * @var int $isDefault
+     * @var bool $isDefault
      */
     public $isDefault;
 
@@ -756,7 +759,11 @@ class Variant extends Purchasable
 
             return [
                 'elementType' => Product::class,
-                'map' => $map
+                'map' => $map,
+                'criteria' => [
+                    'status' => null,
+                    'enabledForSite' => false,
+                ]
             ];
         }
 
@@ -801,6 +808,43 @@ class Variant extends Purchasable
     }
 
     /**
+     * @return string
+     * @throws InvalidConfigException
+     * @since 3.1
+     */
+    public function getGqlTypeName(): string
+    {
+        $product = $this->getProduct();
+
+        if (!$product || !$productType = $product->getType()) {
+            return 'Variant';
+        }
+
+        return static::gqlTypeNameByContext($productType);
+    }
+
+    /**
+     * @param mixed $context
+     * @return string
+     * @since 3.1
+     */
+    public static function gqlTypeNameByContext($context): string
+    {
+        return $context->handle . '_Variant';
+    }
+
+    /**
+     * @param mixed $context
+     * @return array
+     * @since 3.1
+     */
+    public static function gqlScopesByContext($context): array
+    {
+        /** @var ProductType $context */
+        return ['productTypes.' . $context->uid];
+    }
+
+    /**
      * @inheritdoc
      */
     public function afterSave(bool $isNew)
@@ -826,9 +870,13 @@ class Variant extends Purchasable
         $record->minQty = $this->minQty;
         $record->maxQty = $this->maxQty;
         $record->stock = $this->stock;
-        $record->isDefault = $this->isDefault;
+        $record->isDefault = (bool)$this->isDefault;
         $record->sortOrder = $this->sortOrder;
         $record->hasUnlimitedStock = $this->hasUnlimitedStock;
+
+        // We want to always have the same date as the element table, based on the logic for updating these in the element service i.e resaving
+        $record->dateUpdated = $this->dateUpdated;
+        $record->dateCreated = $this->dateCreated;
 
         if (!$this->getProduct()->getType()->hasDimensions) {
             $record->width = $this->width = 0;
@@ -893,6 +941,10 @@ class Variant extends Purchasable
             return false;
         }
 
+        if (!$this->hasUnlimitedStock && $this->stock < 1) {
+            return false;
+        }
+
         return $this->stock >= 1 || $this->hasUnlimitedStock;
     }
 
@@ -903,7 +955,9 @@ class Variant extends Purchasable
     {
         if ($handle == 'product') {
             $product = $elements[0] ?? null;
-            $this->setProduct($product);
+            if ($product) {
+                $this->setProduct($product);
+            }
         } else {
             parent::setEagerLoadedElements($handle, $elements);
         }
@@ -959,6 +1013,21 @@ class Variant extends Purchasable
         $this->fieldLayoutId = $product->getType()->variantFieldLayoutId;
 
         return parent::beforeValidate();
+    }
+
+    /**
+     * @param bool $isNew
+     * @return bool
+     * @throws InvalidConfigException
+     */
+    public function beforeSave(bool $isNew): bool
+    {
+        // Set the field layout
+        /** @var ProductType $productType */
+        $productType = $this->getProduct()->getType();
+        $this->fieldLayoutId = $productType->getFieldLayout()->id;
+
+        return parent::beforeSave($isNew);
     }
 
     /**

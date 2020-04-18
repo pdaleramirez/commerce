@@ -30,6 +30,7 @@ use craft\elements\db\ElementQuery;
 use craft\elements\db\ElementQueryInterface;
 use craft\helpers\ArrayHelper;
 use craft\helpers\DateTimeHelper;
+use craft\helpers\Db;
 use craft\helpers\UrlHelper;
 use craft\models\CategoryGroup;
 use craft\models\Section;
@@ -422,13 +423,13 @@ class Product extends Element
                     }
                 }
             }
+        }
 
-            // Must have at least one
-            if (null === $this->_variants) {
-                $variant = new Variant();
-                $variant->isDefault = true;
-                $this->setVariants([$variant]);
-            }
+        if (empty($this->_variants) || null === $this->_variants) {
+            $variant = new Variant();
+            $variant->isDefault = true;
+            $this->setVariants([$variant]);
+            $this->_variants = [$variant];
         }
 
         return $this->_variants;
@@ -439,16 +440,16 @@ class Product extends Element
      *
      * @param Variant[]|array $variants
      */
-    public function setVariants(array $variants)
+    public function setVariants($variants)
     {
         $this->_variants = [];
-        $count = 1;
         $this->_defaultVariant = null;
 
-        if (empty($variants)) {
+        if (!$variants || empty($variants)) {
             return;
         }
 
+        $count = 1;
         foreach ($variants as $key => $variant) {
             if (!$variant instanceof Variant) {
                 $variant = ProductHelper::populateProductVariantModel($this, $variant, $key);
@@ -554,7 +555,7 @@ class Product extends Element
 
     /**
      * @inheritdoc
-     * @since 3.3.0
+     * @since 3.0
      */
     public static function gqlScopesByContext($context): array
     {
@@ -708,6 +709,10 @@ class Product extends Element
         $record->defaultWidth = (float)$this->getDefaultVariant()->width;
         $record->defaultWeight = (float)$this->getDefaultVariant()->weight;
 
+        // We want to always have the same date as the element table, based on the logic for updating these in the element service i.e resaving
+        $record->dateUpdated = $this->dateUpdated;
+        $record->dateCreated = $this->dateCreated;
+
         $record->save(false);
 
         $this->id = $record->id;
@@ -787,14 +792,23 @@ class Product extends Element
     public function afterDelete()
     {
         $variants = Variant::find()
-            ->productId($this->id)
+            ->productId([$this->id, ':empty:'])
             ->all();
 
         $elementsService = Craft::$app->getElements();
 
         foreach ($variants as $variant) {
+
+            $hardDelete = false;
             $variant->deletedWithProduct = true;
-            $elementsService->deleteElement($variant);
+
+            // The product ID is gone, so it has been hard deleted
+            if (!$variant->productId) {
+                $hardDelete = true;
+                $variant->deletedWithProduct = false;
+            }
+
+            $elementsService->deleteElement($variant, $hardDelete);
         }
 
         parent::afterDelete();
@@ -841,7 +855,11 @@ class Product extends Element
                 if (count(array_unique($skus)) < count($skus)) {
                     $this->addError('variants', Plugin::t('Not all SKUs are unique.'));
                 }
-            }
+
+                if (empty($this->getVariants())) {
+                    $this->addError('variants', Plugin::t('Must have at least one variant.'));
+                }
+            }, 'skipOnEmpty' => false
         ];
 
         return $rules;
@@ -874,7 +892,7 @@ class Product extends Element
      */
     public function getFieldLayout()
     {
-        return $this->getType()->getFieldLayout();
+        return parent::getFieldLayout() ?? $this->getType()->getFieldLayout();
     }
 
     /**
@@ -1119,6 +1137,11 @@ class Product extends Element
                 'label' => Craft::t('app', 'Date Updated'),
                 'orderBy' => 'elements.dateUpdated',
                 'attribute' => 'dateUpdated'
+            ],
+            [
+                'label' => Craft::t('app', 'ID'),
+                'orderBy' => 'elements.id',
+                'attribute' => 'id',
             ],
         ];
     }

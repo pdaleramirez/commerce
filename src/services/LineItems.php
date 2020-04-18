@@ -295,6 +295,11 @@ class LineItems extends Component
                 ]));
             }
 
+            // Clear cache on save
+            if (isset($this->_lineItemsByOrderId[$lineItem->orderId])) {
+                unset($this->_lineItemsByOrderId[$lineItem->orderId]);
+            }
+
             return $success;
         }
 

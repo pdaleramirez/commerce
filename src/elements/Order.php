@@ -31,6 +31,7 @@ use craft\commerce\models\OrderStatus;
 use craft\commerce\models\PaymentSource;
 use craft\commerce\models\Settings;
 use craft\commerce\models\ShippingMethod;
+use craft\commerce\models\ShippingMethodOption;
 use craft\commerce\models\Transaction;
 use craft\commerce\Plugin;
 use craft\commerce\records\LineItem as LineItemRecord;
@@ -1147,6 +1148,7 @@ class Order extends Element
     {
         $names = parent::extraFields();
         $names[] = 'availableShippingMethods';
+        $names[] = 'availableShippingMethodOptions';
         $names[] = 'adjustments';
         $names[] = 'billingAddress';
         $names[] = 'customer';
@@ -1539,6 +1541,7 @@ class Order extends Element
                 $this->setAdjustments(array_merge($this->getAdjustments(), $adjustments));
             }
         }
+
         // Since shipping adjusters run on the original price, pre discount, let's recalculate
         // if the currently selected shipping method is now not available after adjustments have run.
         $availableMethods = $this->getAvailableShippingMethods();
@@ -1558,6 +1561,30 @@ class Order extends Element
     public function getAvailableShippingMethods(): array
     {
         return Plugin::getInstance()->getShippingMethods()->getAvailableShippingMethods($this);
+    }
+
+    /**
+     * @return ShippingMethodOption[]
+     * @since 3.1
+     */
+    public function getAvailableShippingMethodOptions(): array
+    {
+        $methods = Plugin::getInstance()->getShippingMethods()->getAvailableShippingMethods($this);
+        $options = [];
+        $attributes = (new ShippingMethod())->attributes();
+
+        foreach ($methods as $method) {
+
+            $option = new ShippingMethodOption();
+            foreach ($attributes as $attribute) {
+                $option->$attribute = $method->$attribute;
+            }
+
+            $option->setOrder($this);
+            $options[$option->handle] = $option;
+        }
+
+        return $options;
     }
 
     /**
@@ -1597,7 +1624,13 @@ class Order extends Element
         $orderRecord->itemTotal = $this->getItemTotal();
         $orderRecord->email = $this->getEmail() ?: '';
         $orderRecord->isCompleted = $this->isCompleted;
-        $orderRecord->dateOrdered = $this->dateOrdered;
+
+        $dateOrdered = $this->dateOrdered;
+        if (!$dateOrdered && $orderRecord->isCompleted) {
+            $dateOrdered = Db::prepareDateForDb(new DateTime());
+        }
+        $orderRecord->dateOrdered = $dateOrdered;
+
         $orderRecord->datePaid = $this->datePaid ?: null;
         $orderRecord->dateAuthorized = $this->dateAuthorized ?: null;
         $orderRecord->shippingMethodHandle = $this->shippingMethodHandle;
@@ -1624,6 +1657,10 @@ class Order extends Element
         $orderRecord->message = $this->message;
         $orderRecord->paidStatus = $this->getPaidStatus();
         $orderRecord->recalculationMode = $this->getRecalculationMode();
+
+        // We want to always have the same date as the element table, based on the logic for updating these in the element service i.e resaving
+        $orderRecord->dateUpdated = $this->dateUpdated;
+        $orderRecord->dateCreated = $this->dateCreated;
 
         $customer = $this->getCustomer();
         $existingAddresses = $customer ? $customer->getAddresses() : [];
@@ -2315,6 +2352,15 @@ class Order extends Element
     }
 
     /**
+     * @since 3.1
+     */
+    public function removeShippingAddress()
+    {
+        $this->shippingAddressId = null;
+        $this->_shippingAddress = null;
+    }
+
+    /**
      * @return Address|null
      * @since 2.2
      */
@@ -2343,6 +2389,15 @@ class Order extends Element
     }
 
     /**
+     * @since 3.1
+     */
+    public function removeEstimatedShippingAddress()
+    {
+        $this->estimatedShippingAddressId = null;
+        $this->_estimatedShippingAddress = null;
+    }
+
+    /**
      * @return Address|null
      */
     public function getBillingAddress()
@@ -2365,6 +2420,15 @@ class Order extends Element
 
         $this->billingAddressId = $address->id;
         $this->_billingAddress = $address;
+    }
+
+    /**
+     * @since 3.1
+     */
+    public function removeBillingAddress()
+    {
+        $this->billingAddressId = null;
+        $this->_billingAddress = null;
     }
 
     /**
@@ -2394,6 +2458,16 @@ class Order extends Element
         $this->estimatedBillingAddressId = $address->id;
         $this->_estimatedBillingAddress = $address;
     }
+
+    /**
+     * @since 3.1
+     */
+    public function removeEstimatedBillingAddress()
+    {
+        $this->estimatedBillingAddressId = null;
+        $this->_estimatedBillingAddress = null;
+    }
+
 
     /**
      * @return int|null
