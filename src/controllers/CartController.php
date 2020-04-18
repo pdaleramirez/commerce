@@ -67,14 +67,11 @@ class CartController extends BaseFrontEndController
     public function actionUpdateCart()
     {
         $this->requirePostRequest();
+
         $currentUser = Craft::$app->getUser()->getIdentity();
         $isSiteRequest = Craft::$app->getRequest()->getIsSiteRequest();
 		// Services we will be using.
 		$request = Craft::$app->getRequest();
-
-        if (($siteId = $request->getParam('siteId')) !== null) {
-			Craft::$app->sites->setCurrentSite($siteId);
-		}
 
         /** @var Plugin $plugin */
         $plugin = Plugin::getInstance();

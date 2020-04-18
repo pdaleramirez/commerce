@@ -115,6 +115,8 @@ class CustomersController extends BaseCpController
         $search = $request->getParam('search', null);
         $offset = ($page - 1) * $limit;
 
+        $siteIds = Craft::$app->sites->getEditableSiteIds();
+
         $customersQuery = (new Query())
             ->select([
                 'customers.id as id',
@@ -133,6 +135,7 @@ class CustomersController extends BaseCpController
             ])
             ->from(Table::CUSTOMERS . ' customers')
             ->innerJoin(Table::ORDERS . ' orders' , '[[orders.customerId]] = [[customers.id]]')
+			->leftJoin([CraftTable::ELEMENTS_SITES . ' e'], '[[orders.id]] = [[e.elementId]]')
             ->leftJoin(CraftTable::USERS . ' users', '[[users.id]] = [[customers.userId]]')
             ->leftJoin(Table::ADDRESSES . ' billing', '[[billing.id]] = [[customers.primaryBillingAddressId]]')
             ->leftJoin(Table::ADDRESSES . ' shipping', '[[shipping.id]] = [[customers.primaryShippingAddressId]]')
@@ -159,7 +162,8 @@ class CustomersController extends BaseCpController
                         ['not', ['primaryShippingAddressId' => null]],
                     ]
                 ]
-            ])->andWhere(['[[orders.isCompleted]]' => 1]);
+            ])->andWhere(['[[orders.isCompleted]]' => 1])
+			->andWhere(['[[e.siteId]]' => $siteIds]);
 
         if ($search) {
             $likeOperator = Craft::$app->getDb()->getIsPgsql() ? 'ILIKE' : 'LIKE';
