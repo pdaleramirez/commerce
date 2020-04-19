@@ -7,6 +7,7 @@
 
 namespace craft\commerce\queue\jobs;
 
+use Craft;
 use craft\commerce\Plugin;
 use craft\commerce\elements\Order;
 use craft\queue\BaseJob;
@@ -33,12 +34,12 @@ class SendEmail extends BaseJob
      */
     public $orderHistoryId;
 
-
+	public $siteId;
 
     public function execute($queue)
     {
         $this->setProgress($queue, 0.2);
-
+		Craft::$app->sites->setCurrentSite($this->siteId);
         $order = Order::find()->id($this->orderId)->one();
         $email = Plugin::getInstance()->getEmails()->getEmailById($this->commerceEmailId);
         $orderHistory = Plugin::getInstance()->getOrderHistories()->getOrderHistoryById($this->orderHistoryId);

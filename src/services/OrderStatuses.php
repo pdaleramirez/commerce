@@ -404,6 +404,7 @@ class OrderStatuses extends Component
                 foreach ($status->emails as $email) {
                     Craft::$app->getQueue()->push(new SendEmail([
                         'orderId' => $order->id,
+                        'siteId' => $order->siteId,
                         'commerceEmailId' => $email->id,
                         'orderHistoryId' => $orderHistory->id,
                         'orderData' => $order->toArray()

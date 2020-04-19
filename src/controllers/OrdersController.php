@@ -576,7 +576,7 @@ class OrdersController extends Controller
 
         $id = Craft::$app->getRequest()->getParam('id');
         $orderId = Craft::$app->getRequest()->getParam('orderId');
-
+		DepotiseModule::$app->orders->setCurrentSiteIfAuthorize($orderId);
         if ($id === null || $orderId === null) {
             return $this->asErrorJson(Plugin::t('Bad Request'));
         }
