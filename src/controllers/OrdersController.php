@@ -173,6 +173,7 @@ class OrdersController extends Controller
     {
         $this->requirePermission('commerce-editOrders');
         $this->requirePostRequest();
+		DepotiseModule::$app->getSelectedSiteByAccess();
 
         $data = Craft::$app->getRequest()->getBodyParam('orderData');
 
