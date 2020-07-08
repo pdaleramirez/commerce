@@ -173,13 +173,15 @@ class OrdersController extends Controller
     {
         $this->requirePermission('commerce-editOrders');
         $this->requirePostRequest();
-		DepotiseModule::$app->getSelectedSiteByAccess();
 
         $data = Craft::$app->getRequest()->getBodyParam('orderData');
 
         $orderRequestData = Json::decodeIfJson($data);
 
-        $order = Plugin::getInstance()->getOrders()->getOrderById($orderRequestData['order']['id']);
+		DepotiseModule::$app->orders->setCurrentSiteIfAuthorize($orderRequestData['order']['id']);
+
+		$order = Plugin::getInstance()->getOrders()->getOrderById($orderRequestData['order']['id']);
+		//$order = Craft::$app->getElements()->getElementById($orderRequestData['order']['id'], Order::class, '*');
 
         if (!$order) {
             throw new HttpException(400, Plugin::t('Invalid Order ID'));
@@ -240,6 +242,9 @@ class OrdersController extends Controller
         $this->requirePermission('commerce-deleteOrders');
 
         $orderId = (int)Craft::$app->getRequest()->getRequiredBodyParam('orderId');
+
+		DepotiseModule::$app->orders->setCurrentSiteIfAuthorize($orderId);
+
         $order = Plugin::getInstance()->getOrders()->getOrderById($orderId);
 
         if (!$order) {
@@ -268,6 +273,8 @@ class OrdersController extends Controller
 
         $data = Craft::$app->getRequest()->getRawBody();
         $orderRequestData = Json::decodeIfJson($data);
+
+		DepotiseModule::$app->orders->setCurrentSiteIfAuthorize($orderRequestData['order']['id']);
 
         $order = Plugin::getInstance()->getOrders()->getOrderById($orderRequestData['order']['id']);
 
@@ -422,7 +429,6 @@ class OrdersController extends Controller
      */
     public function actionPurchasableSearch($query = null)
     {
-
         if ($query === null) {
             $results = (new Query())
                 ->select(['id', 'price', 'description', 'sku'])
@@ -520,9 +526,11 @@ class OrdersController extends Controller
         // Add the currency formatted price
         $baseCurrency = Plugin::getInstance()->getPaymentCurrencies()->getPrimaryPaymentCurrencyIso();
         foreach ($result as $row) {
+			DepotiseModule::$app->orders->setCurrentSiteIfAuthorize($row['id']);
             /** @var PurchasableInterface $purchasable */
             if ($purchasable = Craft::$app->getElements()->getElementById($row['id'])) {
                 $row['priceAsCurrency'] = Craft::$app->getFormatter()->asCurrency($row['price'], $baseCurrency, [], [], true);
+
                 $row['isAvailable'] = $purchasable->getIsAvailable();
                 $rows[] = $row;
             }
