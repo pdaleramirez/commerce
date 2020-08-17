@@ -503,8 +503,15 @@ class OrdersController extends Controller
         // Prepare purchasables query
         $likeOperator = Craft::$app->getDb()->getIsPgsql() ? 'ILIKE' : 'LIKE';
         $sqlQuery = (new Query())
-            ->select(['id', 'price', 'description', 'sku'])
-            ->from('{{%commerce_purchasables}}');
+			// @todo multi-vendor-edit
+            ->select(['purchasable.id', 'price', 'description', 'sku'])
+            ->from('{{%commerce_purchasables}} as purchasable');
+		// @todo multi-vendor-edit
+		$site = DepotiseModule::$app->getSiteIdByReferrerOrder();
+		if ($site !== null) {
+			$sqlQuery->innerJoin('{{%elements_sites}} as elements', "purchasable.id = elements.elementId")
+					->where(['elements.siteId' => $site]);
+		}
 
         // Are they searching for a SKU or purchasable description?
         if ($search) {
@@ -701,7 +708,9 @@ class OrdersController extends Controller
         $paymentFormData = $request->getParam('paymentForm');
 
         $plugin = Plugin::getInstance();
+
         $order = $plugin->getOrders()->getOrderById($orderId);
+
         $gateways = $plugin->getGateways()->getAllGateways();
 
         $formHtml = '';

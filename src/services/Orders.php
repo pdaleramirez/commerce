@@ -109,6 +109,9 @@ class Orders extends Component
         $query->id($id);
         $query->status(null);
 
+		// @todo multi-vendor-edit
+		$query->site('*');
+
         return $query->one();
     }
 
@@ -122,6 +125,9 @@ class Orders extends Component
     {
         $query = Order::find();
         $query->number($number);
+
+		// @todo multi-vendor-edit
+		$query->site('*');
 
         return $query->one();
     }
