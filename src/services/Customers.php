@@ -475,6 +475,7 @@ class Customers extends Component
      */
     public function getCustomersQuery($search = null): Query
     {
+		$siteIds = Craft::$app->sites->getEditableSiteIds();
         $customersQuery = (new Query())
             ->select([
                 'customers.id as id',
@@ -493,6 +494,7 @@ class Customers extends Component
             ])
             ->from(Table::CUSTOMERS . ' customers')
             ->innerJoin(Table::ORDERS . ' orders' , '[[orders.customerId]] = [[customers.id]]')
+			->leftJoin([CraftTable::ELEMENTS_SITES . ' e'], '[[orders.id]] = [[e.elementId]]')
             ->leftJoin(CraftTable::USERS . ' users', '[[users.id]] = [[customers.userId]]')
             ->leftJoin(Table::ADDRESSES . ' billing', '[[billing.id]] = [[customers.primaryBillingAddressId]]')
             ->leftJoin(Table::ADDRESSES . ' shipping', '[[shipping.id]] = [[customers.primaryShippingAddressId]]')
@@ -519,7 +521,8 @@ class Customers extends Component
                         ['not', ['primaryShippingAddressId' => null]],
                     ]
                 ]
-            ])->andWhere(['[[orders.isCompleted]]' => 1]);
+            ])->andWhere(['[[orders.isCompleted]]' => 1])
+			->andWhere(['[[e.siteId]]' => $siteIds]);
 
         if ($search) {
             $likeOperator = Craft::$app->getDb()->getIsPgsql() ? 'ILIKE' : 'LIKE';
