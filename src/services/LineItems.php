@@ -10,14 +10,17 @@ namespace craft\commerce\services;
 use Craft;
 use craft\commerce\base\PurchasableInterface;
 use craft\commerce\db\Table;
+use craft\commerce\elements\Order;
 use craft\commerce\events\LineItemEvent;
 use craft\commerce\helpers\LineItem as LineItemHelper;
 use craft\commerce\models\LineItem;
 use craft\commerce\Plugin;
 use craft\commerce\records\LineItem as LineItemRecord;
 use craft\db\Query;
+use craft\helpers\ArrayHelper;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\Json;
+use LitEmoji\LitEmoji;
 use Throwable;
 use yii\base\Component;
 use yii\base\Exception;
@@ -220,7 +223,7 @@ class LineItems extends Component
             $lineItemRecord = LineItemRecord::findOne($lineItem->id);
 
             if (!$lineItemRecord) {
-                throw new Exception(Plugin::t( 'No line item exists with the ID “{id}”',
+                throw new Exception(Plugin::t('No line item exists with the ID “{id}”',
                     ['id' => $lineItem->id]));
             }
         }
@@ -257,8 +260,8 @@ class LineItems extends Component
         $lineItemRecord->height = $lineItem->height;
 
         $lineItemRecord->snapshot = $lineItem->snapshot;
-        $lineItemRecord->note = $lineItem->note;
-        $lineItemRecord->privateNote = $lineItem->privateNote ?? '';
+        $lineItemRecord->note = LitEmoji::unicodeToShortcode($lineItem->note);
+        $lineItemRecord->privateNote = LitEmoji::unicodeToShortcode($lineItem->privateNote ?? '');
         $lineItemRecord->lineItemStatusId = $lineItem->lineItemStatusId;
 
         $lineItemRecord->saleAmount = $lineItem->saleAmount;
@@ -381,6 +384,62 @@ class LineItems extends Component
         return (bool)LineItemRecord::deleteAll(['orderId' => $orderId]);
     }
 
+    /**
+     * @param array|Order[] $orders
+     * @return Order[]
+     * @since 3.2.0
+     */
+    public function eagerLoadLineItemsForOrders(array $orders): array
+    {
+        $orderIds = ArrayHelper::getColumn($orders, 'id');
+        $lineItemsResults = $this->_createLineItemQuery()->andWhere(['orderId' => $orderIds])->all();
+
+        $lineItems = [];
+
+        foreach ($lineItemsResults as $result) {
+
+            $result['snapshot'] = Json::decodeIfJson($result['snapshot']);
+            $lineItem = new LineItem($result);
+            $lineItem->typecastAttributes();
+            $lineItems[$lineItem->orderId] = $lineItems[$lineItem->orderId] ?? [];
+            $lineItems[$lineItem->orderId][] = $lineItem;
+        }
+
+        foreach ($orders as $key => $order) {
+            if (isset($lineItems[$order->id])) {
+                $order->setLineItems($lineItems[$order->id]);
+                $orders[$key] = $order;
+            }
+        }
+
+        return $orders;
+    }
+
+    /**
+     *
+     * @param LineItem $lineItem
+     * @param Order $order
+     * @throws Throwable
+     * @since 3.x
+     */
+    public function orderCompleteHandler(LineItem $lineItem, Order $order)
+    {
+        // Called the after order complete method for the purchasable if there is one
+        if ($lineItem->getPurchasable()) {
+            $lineItem->getPurchasable()->afterOrderComplete($order, $lineItem);
+        }
+
+        // Retrieve the default status for the current line item. This is a chance for
+        // developers to hook into an event for finer control
+        $defaultStatus = Plugin::getInstance()->getLineItemStatuses()->getDefaultLineItemStatusForLineItem($lineItem);
+        if (!$defaultStatus) {
+            return;
+        }
+
+        // Set the status ID and save the line item
+        $lineItem->setLineItemStatus($defaultStatus);
+        $this->saveLineItem($lineItem, false);
+    }
 
     /**
      * Returns a Query object prepped for retrieving line items.
@@ -394,7 +453,6 @@ class LineItems extends Component
                 'id',
                 'options',
                 'price',
-                'saleAmount',
                 'salePrice',
                 'sku',
                 'description',
@@ -412,6 +470,7 @@ class LineItems extends Component
                 'shippingCategoryId',
                 'lineItemStatusId',
                 'dateCreated',
+                'dateUpdated'
             ])
             ->from([Table::LINEITEMS . ' lineItems']);
     }

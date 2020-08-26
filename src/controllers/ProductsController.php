@@ -9,28 +9,30 @@ namespace craft\commerce\controllers;
 
 use Craft;
 use craft\base\Element;
-use craft\base\Field;
 use craft\commerce\elements\Product;
 use craft\commerce\helpers\Product as ProductHelper;
-use craft\commerce\helpers\VariantMatrix;
 use craft\commerce\models\ProductType;
 use craft\commerce\Plugin;
 use craft\commerce\web\assets\editproduct\EditProductAsset;
 use craft\commerce\web\assets\productindex\ProductIndexAsset;
 use craft\errors\ElementNotFoundException;
+use craft\errors\InvalidElementException;
 use craft\errors\MissingComponentException;
 use craft\errors\SiteNotFoundException;
+use craft\helpers\ArrayHelper;
 use craft\helpers\Json;
 use craft\helpers\UrlHelper;
 use craft\models\Site;
 use Throwable;
 use yii\base\Exception;
 use yii\base\InvalidConfigException;
+use yii\base\Model;
 use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
 use yii\web\HttpException;
 use yii\web\NotFoundHttpException;
 use yii\web\Response;
+use yii\web\ServerErrorHttpException;
 
 /**
  * Class Products Controller
@@ -45,8 +47,8 @@ class ProductsController extends BaseCpController
      */
     public function init()
     {
-        $this->requirePermission('commerce-manageProducts');
         parent::init();
+        $this->requirePermission('commerce-manageProducts');
     }
 
     /**
@@ -112,16 +114,14 @@ class ProductsController extends BaseCpController
 
         $this->_prepVariables($variables);
 
-        if ($product->getType()->hasVariants) {
-            $variables['variantMatrixHtml'] = VariantMatrix::getVariantMatrixHtml($product);
-        } else {
+        if (!$product->getType()->hasVariants) {
             $this->getView()->registerJs('Craft.Commerce.initUnlimitedStockCheckbox($("#details"));');
         }
 
         // Enable Live Preview?
         if (!Craft::$app->getRequest()->isMobileBrowser(true) && Plugin::getInstance()->getProductTypes()->isProductTypeTemplateValid($variables['productType'], $variables['site']->id)) {
             $this->getView()->registerJs('Craft.LivePreview.init(' . Json::encode([
-                    'fields' => '#title-field, #fields > div > div > .field',
+                    'fields' => '#fields > .flex-fields > .field',
                     'extraFields' => '#details',
                     'previewUrl' => $product->getUrl(),
                     'previewAction' => Craft::$app->getSecurity()->hashData('commerce/products-preview/preview-product'),
@@ -196,6 +196,7 @@ class ProductsController extends BaseCpController
     /**
      * Save a new or existing product.
      *
+     * @param bool $duplicate Whether the product should be duplicated
      * @return Response|null
      * @throws Exception
      * @throws HttpException
@@ -204,40 +205,112 @@ class ProductsController extends BaseCpController
      * @throws MissingComponentException
      * @throws BadRequestHttpException
      */
-    public function actionSaveProduct()
+    public function actionSaveProduct(bool $duplicate = false)
     {
         $this->requirePostRequest();
 
+        // Get the requested product
         $request = Craft::$app->getRequest();
+        $oldProduct = ProductHelper::productFromPost($request);
+        $variants = $request->getBodyParam('variants');
+        $this->enforceProductPermissions($oldProduct);
+        $elementsService = Craft::$app->getElements();
 
-        $product = ProductHelper::populateProductFromPost();
+        $transaction = Craft::$app->getDb()->beginTransaction();
+        try {
+            // If we're duplicating the product, swap $product with the duplicate
+            if ($duplicate) {
+                try {
+                    $originalVariantIds = ArrayHelper::getColumn($oldProduct->getVariants(), 'id');
+                    $product = $elementsService->duplicateElement($oldProduct);
+                    $duplicatedVariantIds = ArrayHelper::getColumn($product->getVariants(), 'id');
 
-        $this->enforceProductPermissions($product);
+                    $newVariants = [];
+                    foreach ($variants as $key => $postedVariant) {
+                        if (strpos($key, 'new') === 0) {
+                            $newVariants[$key] = $postedVariant;
+                        } else {
+                            $index = array_search($key, $originalVariantIds);
+                            if ($index !== false) {
+                                $newVariants[$duplicatedVariantIds[$index]] = $postedVariant;
+                            }
+                        }
+                    }
+                    $variants = $newVariants;
+                } catch (InvalidElementException $e) {
+                    $transaction->rollBack();
 
-        // Save the entry (finally!)
-        if ($product->enabled && $product->enabledForSite) {
-            $product->setScenario(Element::SCENARIO_LIVE);
-            foreach ($product->getVariants() as $variant) {
-                $variant->setScenario(Element::SCENARIO_LIVE);
+                    /** @var Product $clone */
+                    $clone = $e->element;
+
+                    if ($request->getAcceptsJson()) {
+                        return $this->asJson([
+                            'success' => false,
+                            'errors' => $clone->getErrors(),
+                        ]);
+                    }
+
+                    Craft::$app->getSession()->setError(Plugin::t('Couldn’t duplicate product.'));
+
+                    // Send the original product back to the template, with any validation errors on the clone
+                    $oldProduct->addErrors($clone->getErrors());
+                    Craft::$app->getUrlManager()->setRouteParams([
+                        'product' => $oldProduct
+                    ]);
+
+                    return null;
+                } catch (\Throwable $e) {
+                    throw new ServerErrorHttpException(Plugin::t('An error occurred when duplicating the product.'), 0, $e);
+                }
+            } else {
+                $product = $oldProduct;
             }
-        }
 
-        if (!Craft::$app->getElements()->saveElement($product)) {
-            if ($request->getAcceptsJson()) {
-                return $this->asJson([
-                    'success' => false,
-                    'errors' => $product->getErrors(),
+            // Now populate the rest of it from the post data
+            ProductHelper::populateProductFromPost($product, $request);
+
+            $product->setVariants($variants);
+
+            // Save the product (finally!)
+            if ($product->enabled && $product->enabledForSite) {
+                $product->setScenario(Element::SCENARIO_LIVE);
+            }
+
+            $success = $elementsService->saveElement($product);
+            if (!$success && $duplicate && $product->getScenario() === Element::SCENARIO_LIVE) {
+                // Try again with the product disabled
+                $product->enabled = false;
+                $product->setScenario(Model::SCENARIO_DEFAULT);
+                $success = $elementsService->saveElement($product);
+            }
+
+            if (!$success) {
+                $transaction->rollBack();
+
+                if ($request->getAcceptsJson()) {
+                    return $this->asJson([
+                        'success' => false,
+                        'errors' => $product->getErrors(),
+                    ]);
+                }
+
+                Craft::$app->getSession()->setError(Plugin::t('Couldn’t save product.'));
+
+                if ($duplicate) {
+                    // Add validation errors on the original product
+                    $oldProduct->addErrors($product->getErrors());
+                }
+                Craft::$app->getUrlManager()->setRouteParams([
+                    'product' => $oldProduct
                 ]);
+
+                return null;
             }
 
-            Craft::$app->getSession()->setError(Plugin::t('Couldn’t save product.'));
-
-            // Send the category back to the template
-            Craft::$app->getUrlManager()->setRouteParams([
-                'product' => $product
-            ]);
-
-            return null;
+            $transaction->commit();
+        } catch (\Throwable $e) {
+            $transaction->rollBack();
+            throw $e;
         }
 
         if ($request->getAcceptsJson()) {
@@ -256,6 +329,16 @@ class ProductsController extends BaseCpController
         return $this->redirectToPostedUrl($product);
     }
 
+    /**
+     * Duplicates a product.
+     *
+     * @return Response|null
+     * @since 3.1.3
+     */
+    public function actionDuplicateProduct()
+    {
+        return $this->runAction('save-product', ['duplicate' => true]);
+    }
 
     /**
      * @param Product $product
@@ -281,43 +364,9 @@ class ProductsController extends BaseCpController
         /** @var Product $product */
         $product = $variables['product'];
 
-        foreach ($productType->getProductFieldLayout()->getTabs() as $index => $tab) {
-            // Do any of the fields on this tab have errors?
-            $hasErrors = false;
-            if ($product->hasErrors()) {
-                foreach ($tab->getFields() as $field) {
-                    /** @var Field $field */
-                    if ($hasErrors = $product->hasErrors($field->handle . '.*')) {
-                        break;
-                    }
-                }
-            }
-
-            $variables['tabs'][] = [
-                'label' => Plugin::t($tab->name),
-                'url' => '#tab' . ($index + 1),
-                'class' => $hasErrors ? 'error' : null
-            ];
-        }
-
-        if ($productType->hasVariants) {
-            $hasErrors = false;
-            foreach ($product->getVariants() as $variant) {
-                if ($hasErrors = $variant->hasErrors()) {
-                    break;
-                }
-            }
-
-            if ($product->getErrors('variants')) {
-                $hasErrors = true;
-            }
-
-            $variables['tabs'][] = [
-                'label' => Plugin::t('Variants'),
-                'url' => '#variants-container',
-                'class' => $hasErrors ? 'error' : null
-            ];
-        }
+        $form = $productType->getProductFieldLayout()->createForm($product);
+        $variables['tabs'] = $form->getTabMenu();
+        $variables['fieldsHtml'] = $form->render();
 
         $sales = [];
         $discounts = [];

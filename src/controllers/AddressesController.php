@@ -31,9 +31,8 @@ class AddressesController extends BaseCpController
      */
     public function init()
     {
-        $this->requirePermission('commerce-manageOrders');
-
         parent::init();
+        $this->requirePermission('commerce-manageOrders');
     }
 
     /**
@@ -198,7 +197,7 @@ class AddressesController extends BaseCpController
             Craft::$app->getSession()->setError(Plugin::t('Couldn’t update primary address.'));
         }
 
-        return null;
+        return $this->redirectToPostedUrl();
     }
 
     /**

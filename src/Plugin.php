@@ -8,7 +8,6 @@
 namespace craft\commerce;
 
 use Craft;
-use craft\base\Element;
 use craft\base\Plugin as BasePlugin;
 use craft\commerce\base\Purchasable;
 use craft\commerce\elements\Order;
@@ -17,14 +16,15 @@ use craft\commerce\elements\Subscription;
 use craft\commerce\elements\Variant;
 use craft\commerce\exports\LineItemExport;
 use craft\commerce\exports\OrderExport;
+use craft\commerce\fieldlayoutelements\ProductTitleField;
+use craft\commerce\fieldlayoutelements\VariantsField;
+use craft\commerce\fieldlayoutelements\VariantTitleField;
 use craft\commerce\fields\Products;
 use craft\commerce\fields\Variants;
-use craft\commerce\gql\arguments\elements\Product as GqlProductArgument;
-use craft\commerce\gql\arguments\elements\Variant as GqlVariantArgument;
-use craft\commerce\gql\interfaces\elements\Variant as GqlVariantInterface;
-use craft\commerce\gql\resolvers\elements\Product as GqlProductResolver;
 use craft\commerce\gql\interfaces\elements\Product as GqlProductInterface;
-use craft\commerce\gql\resolvers\elements\Variant as GqlVariantResolver;
+use craft\commerce\gql\interfaces\elements\Variant as GqlVariantInterface;
+use craft\commerce\gql\queries\Product as GqlProductQueries;
+use craft\commerce\gql\queries\Variant as GqlVariantQueries;
 use craft\commerce\helpers\ProjectConfigData;
 use craft\commerce\migrations\Install;
 use craft\commerce\models\Settings;
@@ -36,6 +36,7 @@ use craft\commerce\services\Gateways;
 use craft\commerce\services\LineItemStatuses;
 use craft\commerce\services\Orders as OrdersService;
 use craft\commerce\services\OrderStatuses;
+use craft\commerce\services\Pdfs;
 use craft\commerce\services\ProductTypes;
 use craft\commerce\services\Subscriptions;
 use craft\commerce\web\twig\CraftVariableBehavior;
@@ -56,17 +57,21 @@ use craft\console\Controller as ConsoleController;
 use craft\console\controllers\ResaveController;
 use craft\elements\User as UserElement;
 use craft\events\DefineConsoleActionsEvent;
+use craft\events\DefineFieldLayoutFieldsEvent;
 use craft\events\RebuildConfigEvent;
 use craft\events\RegisterCacheOptionsEvent;
 use craft\events\RegisterComponentTypesEvent;
 use craft\events\RegisterElementExportersEvent;
-use craft\events\RegisterGqlPermissionsEvent;
+use craft\events\RegisterGqlEagerLoadableFields;
 use craft\events\RegisterGqlQueriesEvent;
+use craft\events\RegisterGqlSchemaComponentsEvent;
 use craft\events\RegisterGqlTypesEvent;
 use craft\events\RegisterUserPermissionsEvent;
 use craft\fixfks\controllers\RestoreController;
+use craft\gql\ElementQueryConditionBuilder;
 use craft\helpers\FileHelper;
 use craft\helpers\UrlHelper;
+use craft\models\FieldLayout;
 use craft\redactor\events\RegisterLinkOptionsEvent;
 use craft\redactor\Field as RedactorField;
 use craft\services\Dashboard;
@@ -83,7 +88,6 @@ use craft\web\twig\variables\CraftVariable;
 use yii\base\Event;
 use yii\base\Exception;
 use yii\web\User;
-use GraphQL\Type\Definition\Type as GqlTypeDefinition;
 
 /**
  * @property array $cpNavItem the control panel navigation menu
@@ -124,8 +128,7 @@ class Plugin extends BasePlugin
     /**
      * @inheritDoc
      */
-
-    public $schemaVersion = '3.1.11';
+    public $schemaVersion = '3.2.3';
 
     /**
      * @inheritdoc
@@ -153,29 +156,38 @@ class Plugin extends BasePlugin
     {
         parent::init();
         $this->_setPluginComponents();
-        $this->_registerCpRoutes();
         $this->_addTwigExtensions();
         $this->_registerFieldTypes();
-        $this->_registerRedactorLinkOptions();
         $this->_registerPermissions();
         $this->_registerCraftEventListeners();
-        $this->_registerSessionEventListeners();
         $this->_registerProjectConfigEventListeners();
-        $this->_registerWidgets();
         $this->_registerVariables();
         $this->_registerForeignKeysRestore();
         $this->_registerPoweredByHeader();
         $this->_registerElementTypes();
         $this->_registerGqlInterfaces();
         $this->_registerGqlQueries();
-        $this->_registerGqlPermissions();
+        $this->_registerGqlComponents();
+        $this->_registerGqlEagerLoadableFields();
         $this->_registerCacheTypes();
-        $this->_registerTemplateHooks();
         $this->_registerGarbageCollection();
-        $this->_registerElementExports();
-        $this->_defineResaveCommand();
 
-        Craft::setAlias('@commerceLib',  Craft::getAlias('@craft/commerce/../lib'));
+        $request = Craft::$app->getRequest();
+
+        if ($request->getIsConsoleRequest()) {
+            $this->_defineResaveCommand();
+        } else if ($request->getIsCpRequest()) {
+            $this->_registerCpRoutes();
+            $this->_registerWidgets();
+            $this->_registerElementExports();
+            $this->_defineFieldLayoutElements();
+            $this->_registerTemplateHooks();
+            $this->_registerRedactorLinkOptions();
+        } else {
+            $this->_registerSiteRoutes();
+        }
+
+        Craft::setAlias('@commerceLib', Craft::getAlias('@craft/commerce/../lib'));
     }
 
     /**
@@ -382,18 +394,6 @@ class Plugin extends BasePlugin
     }
 
     /**
-     * Register Commerce’s session event listeners
-     */
-    private function _registerSessionEventListeners()
-    {
-        if (!Craft::$app->getRequest()->getIsConsoleRequest()) {
-            Event::on(UserElement::class, UserElement::EVENT_AFTER_SAVE, [$this->getCustomers(), 'saveUserHandler']);
-            Event::on(User::class, User::EVENT_AFTER_LOGIN, [$this->getCustomers(), 'loginHandler']);
-            Event::on(User::class, User::EVENT_AFTER_LOGOUT, [$this->getCustomers(), 'logoutHandler']);
-        }
-    }
-
-    /**
      * Register Commerce’s project config event listeners
      */
     private function _registerProjectConfigEventListeners()
@@ -440,6 +440,11 @@ class Plugin extends BasePlugin
             ->onUpdate(Emails::CONFIG_EMAILS_KEY . '.{uid}', [$emailService, 'handleChangedEmail'])
             ->onRemove(Emails::CONFIG_EMAILS_KEY . '.{uid}', [$emailService, 'handleDeletedEmail']);
 
+        $pdfService = $this->getPdfs();
+        $projectConfigService->onAdd(Pdfs::CONFIG_PDFS_KEY . '.{uid}', [$pdfService, 'handleChangedPdf'])
+            ->onUpdate(Pdfs::CONFIG_PDFS_KEY . '.{uid}', [$pdfService, 'handleChangedPdf'])
+            ->onRemove(Pdfs::CONFIG_PDFS_KEY . '.{uid}', [$pdfService, 'handleDeletedPdf']);
+
         Event::on(ProjectConfig::class, ProjectConfig::EVENT_REBUILD, function(RebuildConfigEvent $event) {
             $event->config['commerce'] = ProjectConfigData::rebuildProjectConfig();
         });
@@ -450,9 +455,14 @@ class Plugin extends BasePlugin
      */
     private function _registerCraftEventListeners()
     {
+        if (!Craft::$app->getRequest()->isConsoleRequest) {
+            Event::on(User::class, User::EVENT_AFTER_LOGIN, [$this->getCustomers(), 'loginHandler']);
+            Event::on(User::class, User::EVENT_AFTER_LOGOUT, [$this->getCustomers(), 'logoutHandler']);
+        }
+
         Event::on(Sites::class, Sites::EVENT_AFTER_SAVE_SITE, [$this->getProductTypes(), 'afterSaveSiteHandler']);
         Event::on(Sites::class, Sites::EVENT_AFTER_SAVE_SITE, [$this->getProducts(), 'afterSaveSiteHandler']);
-        Event::on(UserElement::class, UserElement::EVENT_AFTER_SAVE, [$this->getCustomers(), 'afterSaveUserHandler']);
+        Event::on(UserElement::class, UserElement::EVENT_AFTER_SAVE, [$this->getCustomers(), 'afterSaveUserHandler'], null, false); // Lets run this before other plugins if we can
         Event::on(UserElement::class, UserElement::EVENT_BEFORE_DELETE, [$this->getSubscriptions(), 'beforeDeleteUserHandler']);
         Event::on(Purchasable::class, Elements::EVENT_BEFORE_RESTORE_ELEMENT, [$this->getPurchasables(), 'beforeRestorePurchasableHandler']);
     }
@@ -547,7 +557,7 @@ class Plugin extends BasePlugin
     }
 
     /**
-     * Register the Gql things
+     * Register the Gql interfaces
      */
     private function _registerGqlInterfaces()
     {
@@ -561,51 +571,51 @@ class Plugin extends BasePlugin
     }
 
     /**
-     * Register the Gql things
+     * Register the Gql queries
      */
     private function _registerGqlQueries()
     {
         Event::on(Gql::class, Gql::EVENT_REGISTER_GQL_QUERIES, function(RegisterGqlQueriesEvent $event) {
             // Add my GraphQL queries
-            $queries = $event->queries;
-            $queries['products'] = [
-                'type' => GqlTypeDefinition::listOf(GqlProductInterface::getType()),
-                'args' => GqlProductArgument::getArguments(),
-                'resolve' => GqlProductResolver::class . '::resolve',
-            ];
-            $queries['variants'] = [
-                'type' => GqlTypeDefinition::listOf(GqlVariantInterface::getType()),
-                'args' => GqlVariantArgument::getArguments(),
-                'resolve' => GqlVariantResolver::class . '::resolve',
-            ];
-
-            $event->queries = $queries;
+            $event->queries = array_merge(
+                $event->queries,
+                GqlProductQueries::getQueries(),
+                GqlVariantQueries::getQueries()
+            );
         });
     }
 
     /**
-     * Register the Gql things
+     * Register the Gql permissions
      */
-    private function _registerGqlPermissions()
+    private function _registerGqlComponents()
     {
-        Event::on(Gql::class, Gql::EVENT_REGISTER_GQL_PERMISSIONS, function(RegisterGqlPermissionsEvent $event) {
-            $permissions = [];
+        Event::on(Gql::class, Gql::EVENT_REGISTER_GQL_SCHEMA_COMPONENTS, function(RegisterGqlSchemaComponentsEvent $event) {
+            $queryComponents = [];
 
             $productTypes = Plugin::getInstance()->getProductTypes()->getAllProductTypes();
 
             if (!empty($productTypes)) {
-                $label = Craft::t('commerce', 'Products');
+                $label = Plugin::t('Products');
                 $productPermissions = [];
 
                 foreach ($productTypes as $productType) {
                     $suffix = 'productTypes.' . $productType->uid;
-                    $productPermissions[$suffix . ':read'] = ['label' => Craft::t('app', 'View product type - {productType}', ['productType' => Craft::t('site', $productType->name)])];
+                    $productPermissions[$suffix . ':read'] = ['label' => self::t('View product type - {productType}', ['productType' => Craft::t('site', $productType->name)])];
                 }
 
-                $permissions[$label] = $productPermissions;
+                $queryComponents[$label] = $productPermissions;
             }
 
-            $event->permissions = array_merge($event->permissions, $permissions);
+            $event->queries = array_merge($event->queries, $queryComponents);
+        });
+    }
+
+    private function _registerGqlEagerLoadableFields()
+    {
+        Event::on(ElementQueryConditionBuilder::class, ElementQueryConditionBuilder::EVENT_REGISTER_GQL_EAGERLOADABLE_FIELDS, function(RegisterGqlEagerLoadableFields $event) {
+            $event->fieldList['variants'] = [Products::class];
+            $event->fieldList['product'] = [Variants::class];
         });
     }
 
@@ -665,11 +675,33 @@ class Plugin extends BasePlugin
      *
      * @since 2.2
      */
-    public function _registerElementExports()
+    private function _registerElementExports()
     {
         Event::on(Order::class, Order::EVENT_REGISTER_EXPORTERS, function(RegisterElementExportersEvent $e) {
             $e->exporters[] = OrderExport::class;
             $e->exporters[] = LineItemExport::class;
+        });
+    }
+
+    /**
+     * Registers additional standard fields for the product and variant field layout designers.
+     *
+     * @since 3.2.0
+     */
+    private function _defineFieldLayoutElements()
+    {
+        Event::on(FieldLayout::class, FieldLayout::EVENT_DEFINE_STANDARD_FIELDS, function(DefineFieldLayoutFieldsEvent $e) {
+            /** @var FieldLayout $fieldLayout */
+            $fieldLayout = $e->sender;
+
+            switch ($fieldLayout->type) {
+                case Product::class:
+                    $e->fields[] = ProductTitleField::class;
+                    $e->fields[] = VariantsField::class;
+                    break;
+                case Variant::class:
+                    $e->fields[] = VariantTitleField::class;
+            }
         });
     }
 

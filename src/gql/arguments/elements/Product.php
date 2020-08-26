@@ -9,6 +9,7 @@ namespace craft\commerce\gql\arguments\elements;
 
 use Craft;
 use craft\commerce\elements\Product as ProductElement;
+use craft\commerce\gql\types\input\Variant;
 use craft\commerce\Plugin;
 use craft\gql\base\ElementArguments;
 use craft\gql\types\QueryArgument;
@@ -27,7 +28,7 @@ class Product extends ElementArguments
      */
     public static function getArguments(): array
     {
-        return array_merge(parent::getArguments(),  self::getContentArguments(), [
+        return array_merge(parent::getArguments(), self::getContentArguments(), [
             'availableForPurchase' => [
                 'name' => 'availableForPurchase',
                 'type' => Type::boolean(),
@@ -36,7 +37,7 @@ class Product extends ElementArguments
             'defaultPrice' => [
                 'name' => 'defaultPrice',
                 'type' => Type::listOf(QueryArgument::getType()),
-                'description' => 'Narrows the query results based on teh default price on the product.'
+                'description' => 'Narrows the query results based on the default price on the product.'
             ],
             'editable' => [
                 'name' => 'editable',
@@ -53,12 +54,17 @@ class Product extends ElementArguments
                 'type' => Type::listOf(QueryArgument::getType()),
                 'description' => 'Narrows the query results based on the product types the products belong to, per the product type IDs.'
             ],
+            'hasVariant' => [
+                'name' => 'hasVariant',
+                'type' => Variant::getType(),
+                'description' => 'Narrows the query results to only products that have certain variants.'
+            ]
         ]);
     }
 
     /**
      * @inheritdoc
-     * @since 3.x
+     * @since 3.1.2
      */
     public static function getContentArguments(): array
     {

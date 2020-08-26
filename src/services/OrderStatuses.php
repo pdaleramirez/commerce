@@ -75,10 +75,14 @@ class OrderStatuses extends Component
 
 
     /**
-     * @var OrderStatus[]
+     * @var OrderStatus[]|null
+     */
+    private $_orderStatusesWithTrashed;
+
+    /**
+     * @var OrderStatus[]|null
      */
     private $_orderStatuses;
-
 
     /**
      * Returns all Order Statuses
@@ -89,19 +93,36 @@ class OrderStatuses extends Component
      */
     public function getAllOrderStatuses($withTrashed = false): array
     {
-        // Get the caches items if we have them cached, and the request is for non-trashed items
-        if ($this->_orderStatuses !== null) {
+
+        if ($this->_orderStatuses !== null && !$withTrashed) {
             return $this->_orderStatuses;
         }
 
-        $results = $this->_createOrderStatusesQuery($withTrashed)->all();
-        $orderStatuses = [];
-
-        foreach ($results as $row) {
-            $orderStatuses[] = new OrderStatus($row);
+        if ($this->_orderStatusesWithTrashed !== null && $withTrashed) {
+            return $this->_orderStatusesWithTrashed;
         }
 
-        return $orderStatuses;
+        $results = $this->_createOrderStatusesQuery($withTrashed)->all();
+
+        if ($withTrashed) {
+            $this->_orderStatusesWithTrashed = [];
+        }
+
+        if (!$withTrashed) {
+            $this->_orderStatuses = [];
+        }
+
+        foreach ($results as $row) {
+            if ($withTrashed) {
+                $this->_orderStatusesWithTrashed[] = new OrderStatus($row);
+            }
+
+            if (!$withTrashed) {
+                $this->_orderStatuses[] = new OrderStatus($row);
+            }
+        }
+
+        return !$withTrashed ? $this->_orderStatuses : $this->_orderStatusesWithTrashed;
     }
 
     /**
@@ -181,7 +202,7 @@ class OrderStatuses extends Component
             ->select(['[[o.orderStatusId]]', 'count(o.id) as orderCount'])
             ->where(['[[o.isCompleted]]' => true, '[[e.dateDeleted]]' => null])
             ->from([Table::ORDERS . ' o'])
-            ->leftJoin([CraftTable::ELEMENTS . ' e'], '[[o.id]] = [[e.id]]')
+            ->innerJoin([CraftTable::ELEMENTS . ' e'], '[[o.id]] = [[e.id]]')
             ->groupBy(['[[o.orderStatusId]]'])
             ->indexBy('orderStatusId')
             ->all();
@@ -260,6 +281,9 @@ class OrderStatuses extends Component
         if ($isNewStatus) {
             $orderStatus->id = Db::idByUid(Table::ORDERSTATUSES, $statusUid);
         }
+
+        $this->_orderStatuses = null;
+        $this->_orderStatusesWithTrashed = null;
 
         return true;
     }
@@ -368,6 +392,10 @@ class OrderStatuses extends Component
             $transaction->rollBack();
             throw $e;
         }
+
+        // Clear caches
+        $this->_orderStatuses = null;
+        $this->_orderStatusesWithTrashed = null;
     }
 
     /**

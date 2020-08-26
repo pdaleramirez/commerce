@@ -14,6 +14,7 @@ use craft\commerce\db\Table;
 use craft\commerce\elements\Order;
 use craft\commerce\events\SaleEvent;
 use craft\commerce\events\SaleMatchEvent;
+use craft\commerce\helpers\Currency as CurrencyHelper;
 use craft\commerce\models\Sale;
 use craft\commerce\Plugin;
 use craft\commerce\records\Sale as SaleRecord;
@@ -61,7 +62,7 @@ class Sales extends Component
      *         $purchasable = $event->purchasable;
      *         // @var bool $isNew
      *         $isNew = $event->isNew;
-     * 
+     *
      *         // Use custom business logic to exclude purchasable from sale
      *         // with `$event->isValid = false`
      *         // ...
@@ -121,6 +122,30 @@ class Sales extends Component
      */
     const EVENT_AFTER_SAVE_SALE = 'afterSaveSale';
 
+    /**
+     * @event SaleEvent The event that is triggered after a sale is deleted.
+     *
+     * ```php
+     * use craft\commerce\events\SaleEvent;
+     * use craft\commerce\services\Sales;
+     * use craft\commerce\models\Sale;
+     * use yii\base\Event;
+     *
+     * Event::on(
+     *     Sales::class,
+     *     Sales::EVENT_AFTER_DELETE_SALE,
+     *     function(SaleEvent $event) {
+     *         // @var Sale $sale
+     *         $sale = $event->sale;
+     *
+     *         // do something
+     *         // ...
+     *     }
+     * );
+     * ```
+     */
+    const EVENT_AFTER_DELETE_SALE = 'afterDeleteSale';
+
 
     /**
      * @var Sale[]
@@ -163,29 +188,30 @@ class Sales extends Component
     public function getAllSales(): array
     {
         if (null === $this->_allSales) {
-            $sales = (new Query())->select(
-                'sales.id,
-                sales.name,
-                sales.description,
-                sales.dateFrom,
-                sales.dateTo,
-                sales.apply,
-                sales.applyAmount,
-                sales.stopProcessing,
-                sales.ignorePrevious,
-                sales.allGroups,
-                sales.allPurchasables,
-                sales.allCategories,
-                sales.categoryRelationshipType,
-                sales.enabled,
-                sp.purchasableId,
-                spt.categoryId,
-                sug.userGroupId')
+            $sales = (new Query())->select([
+                'sales.id',
+                'sales.name',
+                'sales.description',
+                'sales.dateFrom',
+                'sales.dateTo',
+                'sales.apply',
+                'sales.applyAmount',
+                'sales.stopProcessing',
+                'sales.ignorePrevious',
+                'sales.allGroups',
+                'sales.allPurchasables',
+                'sales.allCategories',
+                'sales.sortOrder',
+                'sales.categoryRelationshipType',
+                'sales.enabled',
+                'sp.purchasableId',
+                'spt.categoryId',
+                'sug.userGroupId'])
                 ->from(Table::SALES . ' sales')
                 ->leftJoin(Table::SALE_PURCHASABLES . ' sp', '[[sp.saleId]] = [[sales.id]]')
                 ->leftJoin(Table::SALE_CATEGORIES . ' spt', '[[spt.saleId]] = [[sales.id]]')
                 ->leftJoin(Table::SALE_USERGROUPS . ' sug', '[[sug.saleId]] = [[sales.id]]')
-                ->orderBy('sortOrder asc')
+                ->orderBy(['sales.sortOrder' => 'ASC'])
                 ->all();
 
             $allSalesById = [];
@@ -230,6 +256,7 @@ class Sales extends Component
      * Populates a sale's relations.
      *
      * @param Sale $sale
+     * @deprecated in 3.x. No longer required as IDs are populated when retrieving the sale using the service.
      */
     public function populateSaleRelations(Sale $sale)
     {
@@ -381,7 +408,7 @@ class Sales extends Component
             $salePrice = 0;
         }
 
-        return $salePrice;
+        return CurrencyHelper::round($salePrice);
     }
 
     /**
@@ -580,6 +607,8 @@ class Sales extends Component
 
             $transaction->commit();
 
+            $this->_clearCaches();
+
             // Fire an 'beforeSaveSection' event
             if ($this->hasEventHandlers(self::EVENT_AFTER_SAVE_SALE)) {
                 $this->trigger(self::EVENT_AFTER_SAVE_SALE, new SaleEvent([
@@ -609,6 +638,8 @@ class Sales extends Component
                 ->execute();
         }
 
+        $this->_clearCaches();
+
         return true;
     }
 
@@ -623,13 +654,27 @@ class Sales extends Component
      */
     public function deleteSaleById($id): bool
     {
-        $sale = SaleRecord::findOne($id);
+        $saleRecord = SaleRecord::findOne($id);
 
-        if ($sale) {
-            return $sale->delete();
+        if (!$saleRecord) {
+            return false;
         }
 
-        return false;
+        $sale = $this->getSaleById($saleRecord->id);
+
+        $this->_clearCaches();
+        $result = (bool)$saleRecord->delete();
+
+        //Raise the afterDeleteSale event
+        if ($result && $this->hasEventHandlers(self::EVENT_AFTER_DELETE_SALE)) {
+            $this->trigger(self::EVENT_AFTER_DELETE_SALE, new SaleEvent([
+                'sale' => $sale,
+                'isNew' => false
+            ]));
+        }
+
+
+        return $result;
     }
 
 
@@ -653,5 +698,17 @@ class Sales extends Component
         }
 
         return $this->_allActiveSales;
+    }
+
+    /**
+     * Clear memoization caches
+     *
+     * @since 3.1.4
+     */
+    private function _clearCaches()
+    {
+        $this->_allActiveSales = null;
+        $this->_allSales = null;
+        $this->_purchasableSaleMatch = [];
     }
 }

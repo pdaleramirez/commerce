@@ -228,8 +228,7 @@ class Subscription extends Element
      */
     public function getIsOnTrial()
     {
-        if($this->isExpired)
-        {
+        if ($this->isExpired) {
             return false;
         }
 
@@ -291,7 +290,8 @@ class Subscription extends Element
      */
     public function getTrialExpires(): DateTIme
     {
-        return (clone $this->dateCreated)->add(new DateInterval('P' . $this->trialDays . 'D'));
+        $created = clone $this->dateCreated;
+        return $created->add(new DateInterval('P' . $this->trialDays . 'D'));
     }
 
     /**
@@ -334,7 +334,7 @@ class Subscription extends Element
         if (null === $this->_gateway) {
             $this->_gateway = Plugin::getInstance()->getGateways()->getGatewayById($this->gatewayId);
             if (!$this->_gateway instanceof SubscriptionGatewayInterface) {
-                throw new InvalidConfigException('The gateway set for subscription does not support subsriptions.');
+                throw new InvalidConfigException('The gateway set for subscription does not support subscriptions.');
             }
         }
 
@@ -641,7 +641,8 @@ class Subscription extends Element
      * @return mixed
      * @throws InvalidConfigException if not a subscription gateway anymore
      */
-    public function getBillingIssueDescription() {
+    public function getBillingIssueDescription()
+    {
         return $this->getGateway()->getBillingIssueDescription($this);
     }
 
@@ -651,7 +652,8 @@ class Subscription extends Element
      * @return mixed
      * @throws InvalidConfigException if not a subscription gateway anymore
      */
-    public function getBillingIssueResolveFormHtml() {
+    public function getBillingIssueResolveFormHtml()
+    {
         return $this->getGateway()->getBillingIssueResolveFormHtml($this);
     }
 
@@ -661,7 +663,8 @@ class Subscription extends Element
      * @return mixed
      * @throws InvalidConfigException if not a subscription gateway anymore
      */
-    public function getHasBillingIssues() {
+    public function getHasBillingIssues()
+    {
         return $this->getGateway()->getHasBillingIssues($this);
     }
 
@@ -727,9 +730,9 @@ class Subscription extends Element
                 return $url ? '<a href="' . $url . '">' . Plugin::t('View order') . '</a>' : '';
 
             default:
-                {
-                    return parent::tableAttributeHtml($attribute);
-                }
+            {
+                return parent::tableAttributeHtml($attribute);
+            }
         }
     }
 
@@ -751,7 +754,6 @@ class Subscription extends Element
             ],
         ];
     }
-
 
 
     /**

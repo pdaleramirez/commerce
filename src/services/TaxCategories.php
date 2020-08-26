@@ -103,7 +103,7 @@ class TaxCategories extends Component
     /**
      * Get a tax category by its handle.
      *
-     * @param int $taxCategoryHandle
+     * @param string $taxCategoryHandle
      * @return TaxCategory|null
      */
     public function getTaxCategoryByHandle($taxCategoryHandle)
@@ -181,7 +181,7 @@ class TaxCategories extends Component
             $record = TaxCategoryRecord::findOne($taxCategory->id);
 
             if (!$record) {
-                throw new Exception(Plugin::t( 'No tax category exists with the ID “{id}”',
+                throw new Exception(Plugin::t('No tax category exists with the ID “{id}”',
                     ['id' => $taxCategory->id]));
             }
 

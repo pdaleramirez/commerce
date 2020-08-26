@@ -13,14 +13,11 @@ use craft\commerce\elements\Order;
 use craft\commerce\helpers\LineItem as LineItemHelper;
 use craft\commerce\Plugin;
 use craft\errors\ElementNotFoundException;
-use craft\helpers\ArrayHelper;
 use craft\helpers\Html;
 use craft\helpers\UrlHelper;
-use LitEmoji\LitEmoji;
 use Throwable;
 use yii\base\Exception;
 use yii\web\BadRequestHttpException;
-use yii\web\HttpException;
 use yii\web\NotFoundHttpException;
 use yii\web\Response;
 
@@ -45,9 +42,8 @@ class CartController extends BaseFrontEndController
 
     public function init()
     {
-        $this->_cartVariable = Plugin::getInstance()->getSettings()->cartVariable;
-
         parent::init();
+        $this->_cartVariable = Plugin::getInstance()->getSettings()->cartVariable;
     }
 
     /**
@@ -80,6 +76,7 @@ class CartController extends BaseFrontEndController
         $plugin = Plugin::getInstance();
 
         // Get the cart from the request or from the session.
+        // When we are about to update the cart, we consider it a real cart at this point, and want to actually create it in the DB.
         $this->_cart = $this->_getCart(true);
 
         // Set the custom fields submitted
@@ -87,8 +84,8 @@ class CartController extends BaseFrontEndController
 
         // Backwards compatible way of adding to the cart
         if ($purchasableId = $request->getParam('purchasableId')) {
-            $note = LitEmoji::unicodeToShortcode($request->getParam('note', ''));
-            $options = $request->getParam('options') ?: [];
+            $note = $request->getParam('note', '');
+            $options = $request->getParam('options', []);
             $qty = (int)$request->getParam('qty', 1);
 
             if ($qty > 0) {
@@ -113,8 +110,8 @@ class CartController extends BaseFrontEndController
             $purchasablesByKey = [];
             foreach ($purchasables as $key => $purchasable) {
                 $purchasableId = $request->getParam("purchasables.{$key}.id");
-                $note = LitEmoji::unicodeToShortcode($request->getParam("purchasables.{$key}.note", ''));
-                $options = $request->getParam("purchasables.{$key}.options") ?: [];
+                $note = $request->getParam("purchasables.{$key}.note", '');
+                $options = $request->getParam("purchasables.{$key}.options", []);
                 $qty = (int)$request->getParam("purchasables.{$key}.qty", 1);
 
                 $purchasable = [];
@@ -157,7 +154,7 @@ class CartController extends BaseFrontEndController
         if ($lineItems = $request->getParam('lineItems')) {
             foreach ($lineItems as $key => $lineItem) {
                 $lineItemId = $key;
-                $note = LitEmoji::unicodeToShortcode($request->getParam("lineItems.{$key}.note"));
+                $note = $request->getParam("lineItems.{$key}.note");
                 $options = $request->getParam("lineItems.{$key}.options");
                 $qty = $request->getParam("lineItems.{$key}.qty");
                 $removeLine = $request->getParam("lineItems.{$key}.remove");
@@ -341,7 +338,9 @@ class CartController extends BaseFrontEndController
 
         $attributes = array_merge($this->_cart->activeAttributes(), $customFieldAttributes);
 
-        if (!$this->_cart->validate($attributes) || !Craft::$app->getElements()->saveElement($this->_cart, false)) {
+        $updateCartSearchIndexes = Plugin::getInstance()->getSettings()->updateCartSearchIndexes;
+
+        if (!$this->_cart->validate($attributes) || !Craft::$app->getElements()->saveElement($this->_cart, false, false, $updateCartSearchIndexes)) {
             $error = Plugin::t('Unable to update cart.');
 
             if ($request->getAcceptsJson()) {
@@ -349,6 +348,7 @@ class CartController extends BaseFrontEndController
                     'error' => $error,
                     'errors' => $this->_cart->getErrors(),
                     'success' => !$this->_cart->hasErrors(),
+                    'message' => $error,
                     $this->_cartVariable => $this->cartArray($this->_cart)
                 ]);
             }
@@ -362,18 +362,20 @@ class CartController extends BaseFrontEndController
             return null;
         }
 
+        $cartUpdatedMessage = Plugin::t('Cart updated.');
+        if (($cartUpdatedNotice = $request->getParam('cartUpdatedNotice')) !== null) {
+            $cartUpdatedMessage = Html::encode($cartUpdatedNotice);
+        }
+
         if ($request->getAcceptsJson()) {
             return $this->asJson([
                 'success' => !$this->_cart->hasErrors(),
-                $this->_cartVariable => $this->cartArray($this->_cart)
+                $this->_cartVariable => $this->cartArray($this->_cart),
+                'message' => $cartUpdatedMessage,
             ]);
         }
 
-        if (($cartUpdatedNotice = $request->getParam('cartUpdatedNotice')) !== null) {
-            Craft::$app->getSession()->setNotice(Html::encode($cartUpdatedNotice));
-        } else {
-            Craft::$app->getSession()->setNotice(Plugin::t('Cart updated.'));
-        }
+        Craft::$app->getSession()->setNotice($cartUpdatedMessage);
 
         Craft::$app->getUrlManager()->setRouteParams([
             $this->_cartVariable => $this->_cart

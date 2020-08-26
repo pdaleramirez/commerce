@@ -7,7 +7,6 @@
 
 namespace craft\commerce\base;
 
-use Craft;
 use craft\base\Element;
 use craft\commerce\elements\Order;
 use craft\commerce\helpers\Currency;
@@ -171,15 +170,16 @@ abstract class Purchasable extends Element implements PurchasableInterface
     /**
      * @inheritdoc
      */
-    public function rules()
+    public function defineRules(): array
     {
-        $rules = parent::rules();
+        $rules = parent::defineRules();
 
         $rules[] = [
             ['sku'],
             UniqueValidator::class,
             'targetClass' => PurchasableRecord::class,
             'caseInsensitive' => true,
+            'on' => self::SCENARIO_LIVE,
         ];
 
         return $rules;

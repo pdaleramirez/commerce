@@ -14,6 +14,7 @@ use craft\commerce\db\Table;
 use craft\commerce\elements\Order;
 use craft\commerce\events\DiscountEvent;
 use craft\commerce\events\MatchLineItemEvent;
+use craft\commerce\events\MatchOrderEvent;
 use craft\commerce\models\Discount;
 use craft\commerce\models\LineItem;
 use craft\commerce\models\OrderAdjustment;
@@ -122,7 +123,8 @@ class Discounts extends Component
     /**
      * @event MatchLineItemEvent The event that is triggered when a line item is matched with a discount.
      *
-     * You may set the `isValid` property to `false` on the event to prevent the application of the matched discount.
+     * This event will be raised if all standard conditions are met.
+     * You may set the `isValid` property to `false` on the event to prevent the matching of the discount to the line item.
      *
      * ```php
      * use craft\commerce\services\Discounts;
@@ -147,6 +149,65 @@ class Discounts extends Component
      * ```
      */
     const EVENT_BEFORE_MATCH_LINE_ITEM = 'beforeMatchLineItem';
+
+    /**
+     * @event MatchLineItemEvent The event that is triggered when a line item is matched with a discount.
+     *
+     * This event will be raised if all standard conditions are met.
+     * You may set the `isValid` property to `false` on the event to prevent the matching of the discount to the line item.
+     *
+     * ```php
+     * use craft\commerce\services\Discounts;
+     * use craft\commerce\events\MatchLineItemEvent;
+     * use craft\commerce\models\Discount;
+     * use craft\commerce\models\LineItem;
+     * use yii\base\Event;
+     *
+     * Event::on(
+     *     Discounts::class,
+     *     Discounts::EVENT_DISCOUNT_MATCHES_LINE_ITEM,
+     *     function(MatchLineItemEvent $event) {
+     *         // @var LineItem $lineItem
+     *         $lineItem = $event->lineItem;
+     *         // @var Discount $discount
+     *         $discount = $event->discount;
+     *
+     *         // Check some business rules and prevent a match in special cases
+     *         // ...
+     *     }
+     * );
+     * ```
+     */
+    const EVENT_DISCOUNT_MATCHES_LINE_ITEM = 'discountMatchesLineItem';
+
+    /**
+     * @event MatchOrderEvent The event that is triggered when an order is matched with a discount.
+     *
+     * You may set the `isValid` property to `false` on the event to prevent the matching of the discount with the order.
+     *
+     * ```php
+     * use craft\commerce\services\Discounts;
+     * use craft\commerce\events\MatchOrderEvent;
+     * use craft\commerce\models\Discount;
+     * use craft\commerce\elements\Order;
+     * use yii\base\Event;
+     *
+     * Event::on(
+     *     Discounts::class,
+     *     Discounts::EVENT_DISCOUNT_MATCHES_ORDER,
+     *     function(MatchLineOrder $event) {
+     *         // @var Order $order
+     *         $order = $event->order;
+     *         // @var Discount $discount
+     *         $discount = $event->discount;
+     *
+     *         // Check some business rules and prevent a match in special cases
+     *         // ... $event->isValid = false; // set to false if you want it to NOT match as it would.
+     *     }
+     * );
+     * ```
+     */
+    const EVENT_DISCOUNT_MATCHES_ORDER = 'discountMatchesOrder';
 
 
     /**
@@ -265,15 +326,15 @@ class Discounts extends Component
 
         foreach ($rows as $row) {
             if ($row['purchasableId']) {
-                $purchasableIds[] = $row['purchasableId'];
+                $purchasableIds[] = (int)$row['purchasableId'];
             }
 
             if ($row['categoryId']) {
-                $categoryIds[] = $row['categoryId'];
+                $categoryIds[] = (int)$row['categoryId'];
             }
 
             if ($row['userGroupId']) {
-                $userGroupIds[] = $row['userGroupId'];
+                $userGroupIds[] = (int)$row['userGroupId'];
             }
         }
 
@@ -368,11 +429,11 @@ class Discounts extends Component
                 $id = $purchasable->getId();
 
                 // Get discount by related category
-                $relatedTo = ['sourceElement' => $purchasable->getPromotionRelationSource()];
+                $relatedTo = [$discount->categoryRelationshipType => $purchasable->getPromotionRelationSource()];
                 $categoryIds = $discount->getCategoryIds();
                 $relatedCategories = Category::find()->id($categoryIds)->relatedTo($relatedTo)->ids();
 
-                if (in_array($id, $purchasableIds) || !empty($relatedCategories)) {
+                if (in_array($id, $purchasableIds, false) || !empty($relatedCategories)) {
                     $discounts[$discount->id] = $discount;
                 }
             }
@@ -406,7 +467,7 @@ class Discounts extends Component
 
         if ($discount->getPurchasableIds() && !$discount->allPurchasables) {
             $purchasableId = $lineItem->purchasableId;
-            if (!in_array($purchasableId, $discount->getPurchasableIds(), true)) {
+            if (!in_array($purchasableId, $discount->getPurchasableIds(), false)) {
                 return false;
             }
         }
@@ -426,10 +487,16 @@ class Discounts extends Component
             }
         }
 
-        // Raise the 'beforeMatchLineItem' event
         $event = new MatchLineItemEvent(compact('lineItem', 'discount'));
 
-        $this->trigger(self::EVENT_BEFORE_MATCH_LINE_ITEM, $event);
+        if ($this->hasEventHandlers(self::EVENT_DISCOUNT_MATCHES_LINE_ITEM)) {
+            $this->trigger(self::EVENT_DISCOUNT_MATCHES_LINE_ITEM, $event);
+        }
+
+        if ($this->hasEventHandlers(self::EVENT_BEFORE_MATCH_LINE_ITEM)) {
+            Craft::$app->getDeprecator()->log('Discounts::EVENT_BEFORE_MATCH_LINE_ITEM', 'Discounts::EVENT_BEFORE_MATCH_LINE_ITEM has been deprecated. Use Discounts::EVENT_DISCOUNT_MATCHES_LINE_ITEM instead.');
+            $this->trigger(self::EVENT_BEFORE_MATCH_LINE_ITEM, $event);
+        }
 
         return $event->isValid;
     }
@@ -441,6 +508,7 @@ class Discounts extends Component
      */
     public function matchOrder(Order $order, Discount $discount): bool
     {
+
         if (!$discount->enabled) {
             return false;
         }
@@ -472,23 +540,25 @@ class Discounts extends Component
             return false;
         }
 
-        $orderDiscountConditionParams = [
-            'order' => $order->toArray([], ['lineItems.snapshot', 'shippingAddress', 'billingAddress'])
-        ];
+        if ($discount->orderConditionFormula) {
+            $orderDiscountConditionParams = [
+                'order' => $order->toArray([], ['lineItems.snapshot', 'shippingAddress', 'billingAddress'])
+            ];
 
-        if ($discount->orderConditionFormula && !Plugin::getInstance()->getFormulas()->evaluateCondition($discount->orderConditionFormula, $orderDiscountConditionParams, 'Evaluate Order Discount Condition Formula')) {
+            if (!Plugin::getInstance()->getFormulas()->evaluateCondition($discount->orderConditionFormula, $orderDiscountConditionParams, 'Evaluate Order Discount Condition Formula')) {
+                return false;
+            }
+        }
+
+        if (($discount->allPurchasables && $discount->allCategories) && $discount->purchaseTotal > 0 && $order->getItemSubtotal() < $discount->purchaseTotal) {
             return false;
         }
 
-        if ($discount->allPurchasables && $discount->purchaseTotal > 0 && $order->getItemSubtotal() < $discount->purchaseTotal) {
+        if (($discount->allPurchasables && $discount->allCategories) && $discount->purchaseQty > 0 && $order->getTotalQty() < $discount->purchaseQty) {
             return false;
         }
 
-        if ($discount->allPurchasables && $discount->purchaseQty > 0 && $order->getTotalQty() < $discount->purchaseQty) {
-            return false;
-        }
-
-        if ($discount->allPurchasables && $discount->maxPurchaseQty > 0 && $order->getTotalQty() > $discount->maxPurchaseQty) {
+        if (($discount->allPurchasables && $discount->allCategories) && $discount->maxPurchaseQty > 0 && $order->getTotalQty() > $discount->maxPurchaseQty) {
             return false;
         }
 
@@ -503,7 +573,6 @@ class Discounts extends Component
                     $lineItemMatch = true;
                     $matchingTotal += $lineItem->getSubtotal();
                     $matchingQty += $lineItem->qty;
-                    break;
                 }
             }
 
@@ -524,7 +593,14 @@ class Discounts extends Component
             }
         }
 
-        return true;
+        // Raise the 'beforeMatchLineItem' event
+        $event = new MatchOrderEvent(compact('order', 'discount'));
+
+        if ($this->hasEventHandlers(self::EVENT_DISCOUNT_MATCHES_ORDER)) {
+            $this->trigger(self::EVENT_DISCOUNT_MATCHES_ORDER, $event);
+        }
+
+        return $event->isValid;
     }
 
 
@@ -667,7 +743,7 @@ class Discounts extends Component
         $result = (bool)$discountRecord->delete();
 
         //Raise the afterDeleteDiscount event
-        if ($this->hasEventHandlers(self::EVENT_AFTER_DELETE_DISCOUNT)) {
+        if ($result && $this->hasEventHandlers(self::EVENT_AFTER_DELETE_DISCOUNT)) {
             $this->trigger(self::EVENT_AFTER_DELETE_DISCOUNT, new DiscountEvent([
                 'discount' => $discount,
                 'isNew' => false

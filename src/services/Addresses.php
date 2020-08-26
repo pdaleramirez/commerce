@@ -10,13 +10,16 @@ namespace craft\commerce\services;
 use Craft;
 use craft\commerce\base\AddressZoneInterface;
 use craft\commerce\db\Table;
+use craft\commerce\elements\Order;
 use craft\commerce\events\AddressEvent;
 use craft\commerce\models\Address;
+use craft\commerce\models\Customer;
 use craft\commerce\models\State;
 use craft\commerce\Plugin;
 use craft\commerce\records\Address as AddressRecord;
 use craft\db\Query;
 use craft\helpers\ArrayHelper;
+use LitEmoji\LitEmoji;
 use yii\base\Component;
 use yii\base\InvalidArgumentException;
 use yii\caching\TagDependency;
@@ -240,7 +243,7 @@ class Addresses extends Component
         $addressRecord->phone = $addressModel->phone;
         $addressRecord->alternativePhone = $addressModel->alternativePhone;
         $addressRecord->label = $addressModel->label;
-        $addressRecord->notes = $addressModel->notes;
+        $addressRecord->notes = LitEmoji::unicodeToShortcode($addressModel->notes);
         $addressRecord->businessName = $addressModel->businessName;
         $addressRecord->businessTaxId = $addressModel->businessTaxId;
         $addressRecord->businessId = $addressModel->businessId;
@@ -354,7 +357,7 @@ class Addresses extends Component
             if (Craft::$app->cache->exists($cacheKey)) {
                 $result = Craft::$app->cache->get($cacheKey);
             } else {
-                $result = (bool)$formulasService->evaluateCondition($conditionFormula, ['zipCode'=>$zipCode], 'Zip Code condition formula matching address');
+                $result = (bool)$formulasService->evaluateCondition($conditionFormula, ['zipCode' => $zipCode], 'Zip Code condition formula matching address');
                 Craft::$app->cache->set($cacheKey, $result, null, new TagDependency(['tags' => get_class($zone) . ':' . $zone->id]));
             }
 
@@ -384,14 +387,18 @@ class Addresses extends Component
             ->leftJoin(Table::ORDERS . ' so', '[[addresses.id]] = [[so.shippingAddressId]]')
             ->leftJoin(Table::ORDERS . ' seo', '[[addresses.id]] = [[seo.estimatedShippingAddressId]]')
             ->leftJoin(Table::CUSTOMERS_ADDRESSES . ' c', '[[addresses.id]] = [[c.addressId]]')
-            ->where(['and', [
-                '[[so.shippingAddressId]]' => null,
-                '[[seo.estimatedShippingAddressId]]' => null,
-                '[[c.addressId]]' => null,
-                '[[bo.billingAddressId]]' => null,
-                '[[beo.estimatedBillingAddressId]]' => null,
-                '[[addresses.isStoreLocation]]' => 0,
-            ]]);
+            ->where([
+                'and', [
+                    '[[so.shippingAddressId]]' => null,
+                    '[[seo.estimatedShippingAddressId]]' => null,
+                    '[[c.addressId]]' => null,
+                    '[[bo.billingAddressId]]' => null,
+                    '[[beo.estimatedBillingAddressId]]' => null,
+                    '[[addresses.isStoreLocation]]' => 0,
+                ]
+            ]);
+
+        //TODO: allow modification of orphaned addresses query in an event https://github.com/craftcms/commerce/issues/1627
 
         foreach ($addresses->batch(500) as $address) {
             $ids = ArrayHelper::getColumn($address, 'id', false);
@@ -417,9 +424,11 @@ class Addresses extends Component
 
         // Remove readonly attributes
         $readOnly = [
+            'countryIso',
             'countryText',
             'stateText',
             'abbreviationText',
+            'addressLines',
         ];
         foreach ($readOnly as $item) {
             if (array_key_exists($item, $address)) {
@@ -428,6 +437,47 @@ class Addresses extends Component
         }
 
         return $address;
+    }
+
+    /**
+     * @param array|Order[] $orders
+     * @return Order[]
+     * @since 3.2.0
+     */
+    public function eagerLoadAddressesForOrders(array $orders): array
+    {
+        $shippingAddressIds = array_filter(ArrayHelper::getColumn($orders, 'shippingAddressId'));
+        $billingAddressIds = array_filter(ArrayHelper::getColumn($orders, 'billingAddressId'));
+
+        $shippingAddressResults = $this->_createAddressQuery()->andWhere(['id' => $shippingAddressIds])->all();
+        $billingAddressResults = $this->_createAddressQuery()->andWhere(['id' => $billingAddressIds])->all();
+
+        $shippingAddresses = [];
+        $billingAddresses = [];
+
+        foreach ($shippingAddressResults as $result) {
+            $shippingAddress = new Address($result);
+            $shippingAddresses[$shippingAddress->id] = $shippingAddresses[$shippingAddress->id] ?? $shippingAddress ?? null;
+        }
+
+        foreach ($billingAddressResults as $result) {
+            $billingAddress = new Address($result);
+            $billingAddresses[$billingAddress->id] = $billingAddresses[$billingAddress->id] ?? $billingAddress ?? null;
+        }
+
+        foreach ($orders as $key => $order) {
+            if(isset($shippingAddresses[$order->shippingAddressId])) {
+                $order->setShippingAddress($shippingAddresses[$order->shippingAddressId]);
+            }
+
+            if(isset($billingAddresses[$order->billingAddressId])) {
+                $order->setBillingAddress($billingAddresses[$order->billingAddressId]);
+            }
+
+            $orders[$key] = $order;
+        }
+
+        return $orders;
     }
 
     /**

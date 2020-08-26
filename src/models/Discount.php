@@ -210,6 +210,17 @@ class Discount extends Model
      */
     private $_userGroupIds;
 
+    /**
+     * @inheritDoc
+     */
+    public function init()
+    {
+        if ($this->categoryRelationshipType === null) {
+            $this->categoryRelationshipType = DiscountRecord::CATEGORY_RELATIONSHIP_TYPE_BOTH;
+        }
+
+        parent::init();
+    }
 
     /**
      * @inheritdoc
@@ -232,7 +243,7 @@ class Discount extends Model
     }
 
     /**
-     * @return array
+     * @return int[]
      */
     public function getCategoryIds(): array
     {
@@ -244,7 +255,7 @@ class Discount extends Model
     }
 
     /**
-     * @return array
+     * @return int[]
      */
     public function getPurchasableIds(): array
     {
@@ -256,7 +267,7 @@ class Discount extends Model
     }
 
     /**
-     * @return array
+     * @return int[]
      */
     public function getUserGroupIds(): array
     {
@@ -270,7 +281,7 @@ class Discount extends Model
     /**
      * Sets the related product type ids
      *
-     * @param array $categoryIds
+     * @param int[] $categoryIds
      */
     public function setCategoryIds(array $categoryIds)
     {
@@ -280,7 +291,7 @@ class Discount extends Model
     /**
      * Sets the related product ids
      *
-     * @param array $purchasableIds
+     * @param int[] $purchasableIds
      */
     public function setPurchasableIds(array $purchasableIds)
     {
@@ -290,7 +301,7 @@ class Discount extends Model
     /**
      * Sets the related user group ids
      *
-     * @param array $userGroupIds
+     * @param int[] $userGroupIds
      */
     public function setUserGroupIds(array $userGroupIds)
     {

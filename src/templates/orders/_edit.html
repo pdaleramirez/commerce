@@ -5,14 +5,17 @@
 {% set bodyClass = (bodyClass is defined ? bodyClass~' ' : '') ~ "commerceorders commerceordersedit" %}
 
 {% set crumbs = [
-    {    label: "Orders"|t('commerce'), url: url('commerce/orders') }
+    { label: "Orders"|t('commerce'), url: url('commerce/orders') }
 ] %}
 
 
 {% do view.registerTranslations('commerce', [
+    "“{key}” has invalid JSON",
+    "A valid email is required to create a customer.",
     "Actions",
     "Add a line item",
     "Add an adjustment",
+    "Add an option",
     "Add",
     "Address 1",
     "Address 2",
@@ -20,10 +23,13 @@
     "Adjustments",
     "Amount",
     "Are you sure you want to complete this order?",
+    "Are you sure you want to overwrite the billing address?",
+    "Are you sure you want to overwrite the shipping address?",
     "Are you sure you want to remove this customer?",
     "Are you sure you want to send email: {name}?",
     "Attention",
     "Available?",
+    "billing address",
     "Billing Address",
     "Business ID",
     "Business Name",
@@ -34,12 +40,13 @@
     "Completed",
     "Copied!",
     "Copy",
+    "Copy to {location}",
     "Couldn’t get order.",
     "Couldn’t recalculate order.",
     "Country",
     "Coupon Code",
     "Create your first line item",
-    "Create “{email}”",
+    "Create customer: “{email}”",
     "Custom 1",
     "Custom 2",
     "Custom 3",
@@ -51,10 +58,13 @@
     "Date Paid",
     "Delete",
     "Description",
+    "Discount",
     "Done",
     "Download PDF",
+    "Duplicate options exist",
     "Edit address",
     "Edit",
+    "Edit options",
     "Email sent",
     "Enter coupon code",
     "Enter reference",
@@ -64,6 +74,7 @@
     "ID",
     "Included",
     "Invalid email.",
+    "Invalid JSON",
     "IP Address",
     "Item",
     "Label",
@@ -107,8 +118,10 @@
     "Save and return to all orders",
     "Search customer…",
     "Search…",
+    "Search or enter customer email…",
     "Select address",
     "Send Email",
+    "shipping address",
     "Shipping Address",
     "Shipping Method",
     "Shipping",
@@ -155,6 +168,8 @@
 
 {% block details %}
     <div id="order-meta-app"></div>
+    {# Give plugins a chance to add other things here #}
+    {% hook "cp.commerce.order.edit.details" %}
 {% endblock %}
 
 {% block content %}
@@ -167,7 +182,11 @@
         {% hook "cp.commerce.order.edit.main-pane" %}
     </div>
 
-    {% include 'commerce/orders/_customFields' %}
+    <div id="fields">
+        {{ staticFieldsHtml|raw }}
+        {{ dynamicFieldsHtml|raw }}
+    </div>
+
     {% include 'commerce/orders/_transactions' %}
     {% include 'commerce/orders/_history' %}
 

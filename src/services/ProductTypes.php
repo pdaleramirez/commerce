@@ -30,6 +30,7 @@ use craft\helpers\Db;
 use craft\helpers\ProjectConfig as ProjectConfigHelper;
 use craft\helpers\StringHelper;
 use craft\models\FieldLayout;
+use craft\queue\jobs\ResaveElements;
 use Throwable;
 use yii\base\Component;
 use yii\base\Exception;
@@ -61,7 +62,7 @@ class ProductTypes extends Component
      *     function(ProductTypeEvent $event) {
      *         // @var ProductType|null $productType
      *         $productType = $event->productType;
-     *         
+     *
      *         // Create an audit trail of this action
      *         // ...
      *     }
@@ -328,10 +329,15 @@ class ProductTypes extends Component
             'handle' => $productType->handle,
             'hasDimensions' => $productType->hasDimensions,
             'hasVariants' => $productType->hasVariants,
+
+            // Variant title field
             'hasVariantTitleField' => $productType->hasVariantTitleField,
             'titleFormat' => $productType->titleFormat,
-            'titleLabel' => $productType->titleLabel,
-            'variantTitleLabel' => $productType->variantTitleLabel,
+
+            // Prouduct title field
+            'hasProductTitleField' => $productType->hasProductTitleField,
+            'productTitleFormat' => $productType->productTitleFormat,
+
             'skuFormat' => $productType->skuFormat,
             'descriptionFormat' => $productType->descriptionFormat,
             'siteSettings' => []
@@ -355,7 +361,11 @@ class ProductTypes extends Component
         };
 
         $configData['productFieldLayouts'] = $generateLayoutConfig($productType->getFieldLayout());
-        $configData['variantFieldLayouts'] = $generateLayoutConfig($productType->getVariantFieldLayout());
+        $configData['variantFieldLayouts'] = [];
+        if ($productType->hasVariants) {
+            $configData['variantFieldLayouts'] = $generateLayoutConfig($productType->getVariantFieldLayout());
+        }
+
 
         // Get the site settings
         $allSiteSettings = $productType->getSiteSettings();
@@ -397,6 +407,7 @@ class ProductTypes extends Component
     {
         $productTypeUid = $event->tokenMatches[0];
         $data = $event->newValue;
+        $shouldResaveProducts = false;
 
         // Make sure fields and sites are processed
         ProjectConfigHelper::ensureAllSitesProcessed();
@@ -416,15 +427,36 @@ class ProductTypes extends Component
             $productTypeRecord->uid = $productTypeUid;
             $productTypeRecord->name = $data['name'];
             $productTypeRecord->handle = $data['handle'];
-
             $productTypeRecord->hasDimensions = $data['hasDimensions'];
-            $productTypeRecord->hasVariants = $data['hasVariants'];
+
+            // Variant title fields
             $productTypeRecord->hasVariantTitleField = $data['hasVariantTitleField'];
-            $productTypeRecord->titleFormat = $data['titleFormat'] ?? '{product.title}';
-            $productTypeRecord->titleLabel = $data['titleLabel'] ?? 'Title';
-            $productTypeRecord->variantTitleLabel = $data['variantTitleLabel'] ?? 'Title';
-            $productTypeRecord->skuFormat = $data['skuFormat'] ?? '';
-            $productTypeRecord->descriptionFormat = $data['descriptionFormat'];
+            $titleFormat = $data['titleFormat'] ?? '{product.title}';
+            if ($productTypeRecord->titleFormat != $titleFormat) {
+                $shouldResaveProducts = true;
+            }
+            $productTypeRecord->titleFormat = $titleFormat;
+
+            // Product title fields
+            $productTypeRecord->hasProductTitleField = $data['hasProductTitleField'];
+            $productTypeRecord->productTitleFormat = $data['productTitleFormat'] ?? 'Title';;
+
+            if ($productTypeRecord->hasVariants != $data['hasVariants']) {
+                $shouldResaveProducts = true;
+            }
+            $productTypeRecord->hasVariants = $data['hasVariants'];
+
+            $skuFormat = $data['skuFormat'] ?? '';
+            if ($productTypeRecord->skuFormat != $skuFormat) {
+                $shouldResaveProducts = true;
+            }
+            $productTypeRecord->skuFormat = $skuFormat;
+
+            $descriptionFormat = $data['descriptionFormat'] ?? '';
+            if ($productTypeRecord->descriptionFormat != $descriptionFormat) {
+                $shouldResaveProducts = true;
+            }
+            $productTypeRecord->descriptionFormat = $descriptionFormat;
 
             if (!empty($data['productFieldLayouts']) && !empty($config = reset($data['productFieldLayouts']))) {
                 // Save the main field layout
@@ -570,6 +602,17 @@ class ProductTypes extends Component
             }
 
             $transaction->commit();
+
+            if ($shouldResaveProducts) {
+                Craft::$app->getQueue()->push(new ResaveElements([
+                    'elementType' => Product::class,
+                    'criteria' => [
+                        'siteId' => '*',
+                        'status' => null,
+                        'enabledForSite' => false
+                    ]
+                ]));
+            }
         } catch (Throwable $e) {
             $transaction->rollBack();
             throw $e;
@@ -853,7 +896,7 @@ class ProductTypes extends Component
             $oldPrimarySiteUid = Db::uidById(CraftTable::SITES, $event->oldPrimarySiteId);
             $existingProductTypeSettings = $projectConfig->get(self::CONFIG_PRODUCTTYPES_KEY);
 
-            if (is_array($existingProductTypeSettings)) {
+            if (!$projectConfig->getIsApplyingYamlChanges() && is_array($existingProductTypeSettings)) {
                 foreach ($existingProductTypeSettings as $productTypeUid => $settings) {
                     $primarySiteSettings = $settings['siteSettings'][$oldPrimarySiteUid];
                     $configPath = self::CONFIG_PRODUCTTYPES_KEY . '.' . $productTypeUid . '.siteSettings.' . $event->site->uid;
@@ -891,10 +934,15 @@ class ProductTypes extends Component
                 'productTypes.handle',
                 'productTypes.hasDimensions',
                 'productTypes.hasVariants',
+
+                // Variant title fields
                 'productTypes.hasVariantTitleField',
-                'productTypes.variantTitleLabel',
                 'productTypes.titleFormat',
-                'productTypes.titleLabel',
+
+                // Product title fields
+                'productTypes.hasProductTitleField',
+                'productTypes.productTitleFormat',
+
                 'productTypes.skuFormat',
                 'productTypes.descriptionFormat',
                 'productTypes.uid'
