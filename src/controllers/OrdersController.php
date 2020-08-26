@@ -516,7 +516,7 @@ class OrdersController extends Controller
         $sqlQuery = (new Query())
 
 			// @todo multi-vendor-edit
-            ->select(['purchasable.id', 'price', 'description', 'sku'])
+            ->select([Table::PURCHASABLES . '.id', 'price', 'description', 'sku'])
 			->from(Table::PURCHASABLES);
 		// @todo multi-vendor-edit
 		$site = DepotiseModule::$app->getSiteIdByReferrerOrder();
