@@ -518,13 +518,6 @@ class OrdersController extends Controller
 			// @todo multi-vendor-edit
             ->select([Table::PURCHASABLES . '.id', 'price', 'description', 'sku'])
 			->from(Table::PURCHASABLES);
-		// @todo multi-vendor-edit
-		$site = DepotiseModule::$app->getSiteIdByReferrerOrder();
-		if ($site !== null) {
-			$sqlQuery->innerJoin('{{%elements_sites}} as elements', Table::PURCHASABLES . ".id = elements.elementId")
-					->where(['elements.siteId' => $site]);
-		}
-
 
         // Are they searching for a SKU or purchasable description?
         if ($search) {
@@ -535,10 +528,19 @@ class OrdersController extends Controller
             ]);
         }
 
+		// @todo multi-vendor-edit
+		$site = DepotiseModule::$app->getSiteIdByReferrerOrder();
+
+		if ($site !== null) {
+			$sqlQuery->innerJoin('{{%elements_sites}} as elements', Table::PURCHASABLES . ".id = elements.elementId")
+				->andWhere(['elements.siteId' => $site]);
+		}
+
         $total = $sqlQuery->count();
 
         $sqlQuery->limit($limit);
         $sqlQuery->offset($offset);
+ 
         $result = $sqlQuery->all();
 
 
