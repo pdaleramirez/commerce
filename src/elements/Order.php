@@ -3134,7 +3134,8 @@ class Order extends Element
 	protected function tableAttributeHtml(string $attribute): string
 	{
 		if ($attribute === 'siteId') {
-			return $this->siteId;
+			$site = Craft::$app->sites->getSiteById($this->siteId);
+			return $site->name;
 		}
 		return static::DepotiseTableAttributeHtml($attribute);
 	}
